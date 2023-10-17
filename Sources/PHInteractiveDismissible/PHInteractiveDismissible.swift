@@ -4,13 +4,13 @@
 import UIKit
 
 extension UINavigationController: InteractivePresentable {
-  public var transitionManager: UIViewControllerTransitioningDelegate? {
+  public var interactiveTransitionManager: UIViewControllerTransitioningDelegate? {
     get {
-      (topViewController as? InteractivePresentable)?.transitionManager
+      (topViewController as? InteractivePresentable)?.interactiveTransitionManager
     }
     
     set(newValue) {
-      (topViewController as? InteractivePresentable)?.transitionManager = newValue
+      (topViewController as? InteractivePresentable)?.interactiveTransitionManager = newValue
     }
   }
   
@@ -39,7 +39,7 @@ public extension UIViewController {
     }
     
     let transitionManager = PHModalTransitionManager(interactionController: interactionController)
-    viewController.transitionManager = transitionManager
+    viewController.interactiveTransitionManager = transitionManager
     viewController.transitioningDelegate = transitionManager
     viewController.modalPresentationStyle = .custom
     present(viewController, animated: animated) {

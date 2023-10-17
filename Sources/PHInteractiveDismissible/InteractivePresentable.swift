@@ -8,7 +8,7 @@
 import UIKit
 
 public protocol InteractivePresentable: UIViewController {
-  var transitionManager: UIViewControllerTransitioningDelegate? { get set }
+  var interactiveTransitionManager: UIViewControllerTransitioningDelegate? { get set }
   var dismissibleScrollView: UIScrollView? { get }
   func updatePresentationLayout(animated: Bool)
 }
