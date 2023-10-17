@@ -3,26 +3,6 @@
 
 import UIKit
 
-extension UINavigationController: InteractivePresentable {
-  public var interactiveTransitionManager: UIViewControllerTransitioningDelegate? {
-    get {
-      (topViewController as? InteractivePresentable)?.interactiveTransitionManager
-    }
-    
-    set(newValue) {
-      (topViewController as? InteractivePresentable)?.interactiveTransitionManager = newValue
-    }
-  }
-  
-  public var dismissibleScrollView: UIScrollView? {
-    (topViewController as? InteractivePresentable)?.dismissibleScrollView
-  }
-  
-  public func updatePresentationLayout(animated: Bool) {
-    (topViewController as? InteractivePresentable)?.updatePresentationLayout(animated: animated)
-  }
-}
-
 public extension UIViewController {
   final func present(_ viewController: InteractivePresentable,
                dismissalType: InteractiveDismissalType,
