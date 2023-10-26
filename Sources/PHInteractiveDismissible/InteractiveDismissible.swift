@@ -1,5 +1,5 @@
 //
-//  InteractivePresentable.swift
+//  InteractiveDismissible.swift
 //
 //
 //  Created by Phanith on 16/10/23.
@@ -7,13 +7,13 @@
 
 import UIKit
 
-public protocol InteractivePresentable: UIViewController {
+public protocol InteractiveDismissible: UIViewController {
   var interactiveTransitionManager: UIViewControllerTransitioningDelegate? { get set }
   var dismissibleScrollView: UIScrollView? { get }
   func updatePresentationLayout(animated: Bool)
 }
 
-public extension InteractivePresentable {
+public extension InteractiveDismissible {
   var dismissibleScrollView: UIScrollView? {
     nil
   }

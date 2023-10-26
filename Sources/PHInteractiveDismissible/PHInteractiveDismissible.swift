@@ -4,7 +4,7 @@
 import UIKit
 
 public extension UIViewController {
-  final func present(_ viewController: InteractivePresentable,
+  final func present(_ viewController: InteractiveDismissible,
                dismissalType: InteractiveDismissalType,
                animated: Bool = true,
                completion: (() -> Void)? = nil) {

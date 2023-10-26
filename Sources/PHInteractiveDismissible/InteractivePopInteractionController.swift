@@ -10,7 +10,7 @@ import UIKit
 public final class InteractivePopInteractionController: NSObject, InteractiveTransitioning {
   
   public var interactionInProgress = false
-  private weak var viewController: InteractivePresentable!
+  private weak var viewController: InteractiveDismissible!
   private weak var transitionContext: UIViewControllerContextTransitioning?
   
   private var interactionDistance: CGFloat = 0
@@ -21,10 +21,16 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   
   // MARK: - Init
   
-  public init(viewController: InteractivePresentable) {
+  public init(viewController: InteractiveDismissible) {
     self.viewController = viewController
     super.init()
-    prepareGestureRecognizer(in: viewController.view)
+    
+    if let viewController = (viewController as? UINavigationController)?.topViewController {
+      prepareGestureRecognizer(in: viewController.view)
+    } else {
+      prepareGestureRecognizer(in: viewController.view)
+    }
+    
     if let scrollView = viewController.dismissibleScrollView {
       resolveScrollViewGestures(scrollView)
     }
@@ -191,7 +197,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   
   private func finish(initialSpringVelocity: CGFloat) {
     guard let transitionContext = transitionContext, let presentedFrame = presentedFrame else { return }
-    let presentedViewController = transitionContext.viewController(forKey: .from) as! InteractivePresentable
+    let presentedViewController = transitionContext.viewController(forKey: .from) as! InteractiveDismissible
     let presentingViewController = transitionContext.viewController(forKey: .to).unsafelyUnwrapped
     
     let dismissedFrame = CGRect(x: transitionContext.containerView.bounds.width, y: presentedFrame.minY, width: presentedFrame.width, height: presentedFrame.height)

@@ -4,7 +4,7 @@
 
 
 ## Usage
-Make your UIViewController conform to **InteractivePresentable**.
+Make your UIViewController conform to **InteractiveDismissible**.
 
 ``` swift
 final class ChildInteractiveDismissibleListViewController: UIViewController, InteractivePresentable {
