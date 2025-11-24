@@ -41,6 +41,11 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
     gesture.direction = .left
     gesture.edges = gesture.direction.edges
     view.addGestureRecognizer(gesture)
+    
+    if let preferredCornerRadius = viewController.preferredCornerRadius, preferredCornerRadius > 0.0 {
+      view.layer.cornerRadius = preferredCornerRadius
+      view.layer.masksToBounds = true
+    }
   }
   
   private func resolveScrollViewGestures(_ scrollView: UIScrollView) {

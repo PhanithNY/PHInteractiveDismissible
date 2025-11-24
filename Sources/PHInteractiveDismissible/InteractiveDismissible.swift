@@ -8,13 +8,18 @@
 import UIKit
 
 public protocol InteractiveDismissible: UIViewController {
-  var interactiveTransitionManager: UIViewControllerTransitioningDelegate? { get set }
   var dismissibleScrollView: UIScrollView? { get }
+  var interactiveTransitionManager: UIViewControllerTransitioningDelegate? { get set }
+  var preferredCornerRadius: CGFloat? { get }
   func updatePresentationLayout(animated: Bool)
 }
 
 public extension InteractiveDismissible {
   var dismissibleScrollView: UIScrollView? {
+    nil
+  }
+  
+  var preferredCornerRadius: CGFloat? {
     nil
   }
   
