@@ -43,7 +43,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
     view.addGestureRecognizer(gesture)
     
     if let preferredCornerRadius = viewController.preferredCornerRadius, preferredCornerRadius > 0.0 {
-      let targetView: UIView = viewController.navigationController?.view ?? view
+      let targetView: UIView = (viewController as? UINavigationController)?.view ?? view
       targetView.layer.cornerRadius = preferredCornerRadius
       targetView.layer.masksToBounds = true
     }
