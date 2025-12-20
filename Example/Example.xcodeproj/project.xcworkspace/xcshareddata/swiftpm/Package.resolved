@@ -1,0 +1,24 @@
+{
+  "originHash" : "31c404f18c2309d33d62c01df66a2681bbabe690abd274f68a3db1e2bf885a88",
+  "pins" : [
+    {
+      "identity" : "easyanchor",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/PhanithNY/EasyAnchor.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "6ecb39a5967931ab966cd3b3fb62703ab610b671"
+      }
+    },
+    {
+      "identity" : "wave",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/jtrivedi/Wave.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "27b7e1d2d42b8a4f56d9e84213910b0441c8b810"
+      }
+    }
+  ],
+  "version" : 3
+}
