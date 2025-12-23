@@ -13,7 +13,7 @@ public final class PHZoomPresentationController: UIPresentationController {
   
   private(set) lazy var fadeView: UIView = {
     let view = UIView()
-    view.backgroundColor = UIColor.black.withAlphaComponent(0.6)
+    view.backgroundColor = UIColor.black.withAlphaComponent(0.25)
     view.alpha = 0
     return view
   }()
@@ -40,12 +40,12 @@ public final class PHZoomPresentationController: UIPresentationController {
     fadeView.frame = containerView.bounds
     
     guard let coordinator = presentedViewController.transitionCoordinator else {
-//      fadeView.alpha = 0.50
+      fadeView.alpha = 0.50
       return
     }
     
     coordinator.animate(alongsideTransition: { [weak self] _ in
-//      self?.fadeView.alpha = 0.50
+      self?.fadeView.alpha = 0.50
     })
   }
   
