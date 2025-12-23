@@ -40,12 +40,12 @@ public final class PHZoomPresentationController: UIPresentationController {
     fadeView.frame = containerView.bounds
     
     guard let coordinator = presentedViewController.transitionCoordinator else {
-      fadeView.alpha = 0.50
+//      fadeView.alpha = 0.50
       return
     }
     
     coordinator.animate(alongsideTransition: { [weak self] _ in
-      self?.fadeView.alpha = 0.50
+//      self?.fadeView.alpha = 0.50
     })
   }
   

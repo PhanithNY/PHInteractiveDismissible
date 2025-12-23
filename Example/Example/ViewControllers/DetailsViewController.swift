@@ -17,10 +17,10 @@ final class DetailsViewController: UIViewController, InteractiveDismissible, Zoo
   
   var config: PHInteractiveDismissible.ZoomTransitionConfig? {
     return .init(
-      duration: 0.35,
+      duration: 0.5,
       curve: CAMediaTimingFunction(controlPoints: 0.57, 0.27, 0.21, 0.97),
       maskCornerRadius: UIScreen.main.displayCornerRadius,
-      overlayOpacity: 0.5,
+      overlayOpacity: 0.0,
       interactionScaleFactor: 0.6,
       placeholderColor: .clear,
       sourceView: view
