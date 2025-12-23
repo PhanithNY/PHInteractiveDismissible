@@ -76,12 +76,12 @@ final class RootViewController: UIViewController, ZoomTransitioning {
     selectedCell = collectionView.cellForItem(at: indexPath) as! GridCell
     
     config = .init(
-      duration: 2,
+      duration: 0.35,
       curve: CAMediaTimingFunction(controlPoints: 0.57, 0.27, 0.21, 0.97),
       maskCornerRadius: UIScreen.main.displayCornerRadius,
       overlayOpacity: 0.5,
       interactionScaleFactor: 0.6,
-      placeholderColor: .red,
+      placeholderColor: .clear,
       sourceView: selectedCell?.iconContainerView
     )
     
@@ -93,7 +93,7 @@ final class RootViewController: UIViewController, ZoomTransitioning {
       navigationController.transitioningDelegate = delegate
       navigationController.modalPresentationStyle = .custom
     } else {
-      if #available(iOS 26.0, *) {
+      if #available(iOS 18.0, *) {
         navigationController.preferredTransition = .zoom(sourceViewProvider: { [self] context in
           selectedCell?.iconContainerView
         })

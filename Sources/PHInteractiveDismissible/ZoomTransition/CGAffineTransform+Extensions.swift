@@ -71,7 +71,7 @@ extension CGAffineTransform {
 //  }
   
   
-  static func transform(parent: CGRect, soChild child: CGRect, aspectFills rect: CGRect) -> Self {
+  static func transform(parent: CGRect, soChild child: CGRect, aspectFills rect: CGRect) -> (transform: CGAffineTransform, scaleFactor: CGFloat) {
     let childRatio = child.width / child.height
     let rectRatio = rect.width / rect.height
     
@@ -90,10 +90,8 @@ extension CGAffineTransform {
     
     let scaleTransform = CGAffineTransform(scaleX: scaleFactor, y: scaleFactor)
     let translateTransform = CGAffineTransform(translationX: translateX, y: translateY)
-    print(parent)
-    print(child)
-    print(rect)
-    return scaleTransform.concatenating(translateTransform)
+    let transform = scaleTransform.concatenating(translateTransform)
+    return (transform: transform, scaleFactor: scaleFactor)
   }
 
 }

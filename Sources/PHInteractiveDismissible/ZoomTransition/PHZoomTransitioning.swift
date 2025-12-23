@@ -5,13 +5,8 @@
 //  Created by Phanith Ny on 9/12/25.
 //
 
+import SwiftUI
 import UIKit
-
-extension UIView: NSSecureCoding {
-  public static var supportsSecureCoding: Bool {
-    true
-  }
-}
 
 public class PHZoomTransitioning: NSObject {
   
@@ -81,17 +76,19 @@ extension PHZoomTransitioning {
       imageView.backgroundColor = sourceView.backgroundColor
     }
     
-    let transform: CGAffineTransform = .transform(
+    let result = CGAffineTransform.transform(
       parent: toView.frame,
       soChild: toFrame,
       aspectFills: fromFrame
     )
     
+    let transform = result.transform
+    
     let maskFrame = fromFrame.aspectFit(to: toFrame)
     let mask = UIView(frame: maskFrame).then {
       $0.backgroundColor = .red
       $0.layer.masksToBounds = true
-      $0.layer.cornerRadius = config.maskCornerRadius * UIScreen.main.scale
+      $0.layer.cornerRadius = view.layer.cornerRadius / result.scaleFactor
     }
     
     let overlay = UIView().then {
@@ -114,12 +111,12 @@ extension PHZoomTransitioning {
     imageView.frame = maskFrame
     toView.addSubview(imageView)
 
-    if #available(iOS 18.0, *) {
-      UIView.animate(withDuration: 0.1) {
+    if #available(iOS 17.0, *) {
+      UIView.animate(springDuration: config.duration / 4) {
         imageView.alpha = 0.0
       }
       
-      UIView.animate(springDuration: config.duration, bounce: 0.05, initialSpringVelocity: 0.0, delay: 0.0, options: .curveEaseInOut) {
+      UIView.animate(springDuration: config.duration, bounce: 0.075, initialSpringVelocity: 0.0, options: .curveEaseInOut) {
         toView.transform = .identity
         mask.frame = toView.frame
         mask.layer.cornerRadius = config.maskCornerRadius
@@ -127,8 +124,6 @@ extension PHZoomTransitioning {
         print(config.maskCornerRadius)
         
         self.sourceView?.isHidden = true
-//        imageView.layer.cornerRadius = config.maskCornerRadius
-//        imageView.alpha = 0.0
         imageView.frame = toView.frame
       } completion: { _ in
         self.sourceView?.isHidden = true
@@ -176,7 +171,7 @@ extension PHZoomTransitioning {
       imageView.backgroundColor = sourceView.backgroundColor
     }
     
-    let transform: CGAffineTransform = .transform(
+    let result = CGAffineTransform.transform(
       parent: fromView.frame,
       soChild: fromFrame,
       aspectFills: toFrame
@@ -209,20 +204,20 @@ extension PHZoomTransitioning {
     
     let maskFrame = toFrame.aspectFit(to: fromFrame)
 
-    if #available(iOS 18.0, *) {
-      UIView.animate(withDuration: 0.1, delay: config.duration - 0.1*1.5) {
+    if #available(iOS 17.0, *) {
+      
+      UIView.animate(springDuration: config.duration / 2.5, initialSpringVelocity: 0.0, delay: config.duration / 2.5, options: .curveEaseInOut) {
         imageView.alpha = 1.0
       }
       
-      UIView.animate(springDuration: config.duration, bounce: 0.15, initialSpringVelocity: 0.0, delay: 0.0, options: .curveEaseInOut) {
-        fromView.transform = transform
+      UIView.animate(springDuration: config.duration, bounce: 0.20, initialSpringVelocity: 0.0, delay: 0.0, options: [.curveEaseInOut, .allowUserInteraction]) {
+        fromView.transform = result.transform
         mask.frame = maskFrame
-        mask.layer.cornerRadius = config.maskCornerRadius * UIScreen.main.scale
+        mask.layer.cornerRadius = imageView.layer.cornerRadius / result.scaleFactor
         overlay.layer.opacity = 0
         
         imageView.frame = maskFrame
-//        imageView.layer.cornerRadius = config.maskCornerRadius * UIScreen.main.scale
-//        imageView.alpha = 1.0
+        imageView.alpha = 1.0
       } completion: { _ in
         self.sourceView?.isHidden = false
         overlay.removeFromSuperview()
@@ -234,7 +229,7 @@ extension PHZoomTransitioning {
     }
     
     UIView.animate(duration: config.duration, curve: config.curve) { [self] in
-      fromView.transform = transform
+      fromView.transform = result.transform
       mask.frame = maskFrame
       mask.layer.cornerRadius = config.maskCornerRadius * UIScreen.main.scale
       overlay.layer.opacity = 0
@@ -354,32 +349,3 @@ extension UIEdgeInsets: Then {}
 extension UIOffset: Then {}
 extension UIRectEdge: Then {}
 #endif
-// swiftlint:enable all
-
-import UIKit
-
-
-
-fileprivate protocol MarqueeViewCopyable {
-  func copyMarqueeView() -> UIView
-}
-
-extension UIView: MarqueeViewCopyable {
-  @objc
-  open func copyMarqueeView() -> UIView {
-    if let copiedView = try? self.copyObject() {
-      return copiedView
-    } else {
-      let archivedData = NSKeyedArchiver.archivedData(withRootObject: self)
-      let copyView = NSKeyedUnarchiver.unarchiveObject(with: archivedData) as! UIView
-      return copyView
-    }
-  }
-}
-
-extension UIView {
-  func copyObject<T: UIView>() throws -> T? {
-    let data = try NSKeyedArchiver.archivedData(withRootObject:self, requiringSecureCoding:false)
-    return try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(data) as? T
-  }
-}

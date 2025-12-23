@@ -17,12 +17,12 @@ final class DetailsViewController: UIViewController, InteractiveDismissible, Zoo
   
   var config: PHInteractiveDismissible.ZoomTransitionConfig? {
     return .init(
-      duration: 2,
+      duration: 0.35,
       curve: CAMediaTimingFunction(controlPoints: 0.57, 0.27, 0.21, 0.97),
       maskCornerRadius: UIScreen.main.displayCornerRadius,
       overlayOpacity: 0.5,
       interactionScaleFactor: 0.6,
-      placeholderColor: .blue,
+      placeholderColor: .clear,
       sourceView: view
     )
   }
@@ -131,5 +131,20 @@ extension DetailsViewController {
       view.addSubview($0)
       $0.fill()
     }
+  }
+}
+
+extension UINavigationController: @retroactive ZoomTransitioning {
+  
+  public var sharedFrame: CGRect {
+    (topViewController as? ZoomTransitioning)?.sharedFrame ?? .zero
+  }
+  
+  public func prepare(for transition: PHInteractiveDismissible.PHZoomTransitioning.Transition) {
+    
+  }
+  
+  public var config: PHInteractiveDismissible.ZoomTransitionConfig? {
+    (topViewController as? ZoomTransitioning)?.config
   }
 }

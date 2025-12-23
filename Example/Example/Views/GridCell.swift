@@ -31,7 +31,7 @@ final class GridCell: UICollectionViewCell {
   // MARK: - Properties
   
   private(set) lazy var iconContainerView = UIView().config {
-    $0.backgroundColor = .red
+    $0.backgroundColor = .systemFill
   }
   
   private lazy var iconView = UIImageView().config {
@@ -77,7 +77,7 @@ final class GridCell: UICollectionViewCell {
       $0.top(8)
         .centerX()
         .size(equalTo: 72, priority: .defaultHigh)
-        .layer.cornerRadius = 10//72/2
+        .layer.cornerRadius = 72/2
     }
     
     titleLabel.layout {
