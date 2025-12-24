@@ -138,7 +138,7 @@ extension PHZoomTransitioning {
       
       UIView.animate(
         springDuration: morphDuration,
-        bounce: 0.075,
+        bounce: 0.0,
         initialSpringVelocity: 0.0,
         delay: config.duration * 0.15,
         options: .curveEaseInOut
@@ -236,25 +236,15 @@ extension PHZoomTransitioning {
     fromView.insertSubview(blurView, belowSubview: snapshot)
     
     // Calculate morph timing - start at 75% of the animation
-    let morphDelay = config.duration * 0.25
-    let morphDuration = config.duration * 0.75
+    let morphDelay = config.duration * 0.75
+    let morphDuration = config.duration * 0.25
     
     if #available(iOS 17.0, *) {
       
       UIView.animate(
-        springDuration: config.duration * 0.25,
-        bounce: 0.075,
-        initialSpringVelocity: 10.0,
-        delay: config.duration * 0.15,
-        options: .curveEaseInOut
-      ) {
-        blurView.effect = blurEffect
-      }
-      
-      UIView.animate(
         springDuration: config.duration,
         bounce: 0.1,
-        initialSpringVelocity: 10.0,
+        initialSpringVelocity: 0.0,
         delay: 0.0,
         options: [.curveEaseInOut, .allowUserInteraction]
       ) {
@@ -276,13 +266,23 @@ extension PHZoomTransitioning {
         context.completeTransition(!isCancelled)
       }
       
-      // Morph animation: crossfade to snapshot during blur
       UIView.animate(
         springDuration: morphDuration,
         bounce: 0.0,
         initialSpringVelocity: 0.0,
-        delay: morphDelay,
-        options: .curveLinear
+        delay: config.duration * 0.15,
+        options: .curveEaseInOut
+      ) {
+        blurView.effect = blurEffect
+      }
+      
+      // Morph animation: crossfade to snapshot during blur
+      UIView.animate(
+        springDuration: morphDuration,
+        bounce: 0.0,
+        initialSpringVelocity: 10.0,
+        delay: config.duration * 0.5,
+        options: .curveEaseInOut
       ) {
         snapshot.alpha = 1.0
       }
