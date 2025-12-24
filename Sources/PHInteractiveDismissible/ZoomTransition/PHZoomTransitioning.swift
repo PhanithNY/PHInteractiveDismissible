@@ -87,7 +87,7 @@ extension PHZoomTransitioning {
     
     let maskFrame = fromFrame.aspectFit(to: toFrame)
     let mask = UIView(frame: maskFrame).then {
-      $0.backgroundColor = .red
+      $0.backgroundColor = .black
       $0.layer.masksToBounds = true
       $0.layer.cornerRadius = snapshot.layer.cornerRadius / result.scaleFactor
     }
@@ -98,14 +98,8 @@ extension PHZoomTransitioning {
       $0.frame = fromView.frame
     }
     
-    let placeholder = UIView().then {
-      $0.backgroundColor = config.placeholderColor
-      $0.frame = fromFrame
-    }
-    
     toView.mask = mask
     toView.transform = transform
-    fromView.addSubview(placeholder)
     fromView.addSubview(overlay)
     
     // Position snapshot to match the mask
@@ -113,27 +107,29 @@ extension PHZoomTransitioning {
     toView.addSubview(snapshot)
     
     // Create blur effect for morphing
-    let blurEffect = UIBlurEffect(style: .systemUltraThinMaterial)
+    let blurEffect = config.maskVisualEffect
     let blurView = UIVisualEffectView(effect: blurEffect)
+    blurView.contentView.backgroundColor = snapshot.backgroundColor
     blurView.frame = toView.bounds
     blurView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-//    toView.insertSubview(blurView, belowSubview: snapshot)
     toView.addSubview(blurView)
     
     // Calculate morph timing - fade out in first 25% of animation
     let morphDuration = config.duration * 0.25
     
+    self.sourceView?.isHidden = true
     if #available(iOS 17.0, *) {
       
       // Fade out snapshot and blur quickly at the beginning
       UIView.animate(
-        springDuration: morphDuration,
+        springDuration: config.maskVisualEffect == nil ? config.duration * 0.1 : morphDuration,
         bounce: 0.0,
         initialSpringVelocity: 10.0,
         delay: 0.0,
         options: .curveEaseInOut
       ) {
         snapshot.alpha = 0.0
+        blurView.contentView.backgroundColor = toView.backgroundColor
       }
       
       UIView.animate(
@@ -165,7 +161,6 @@ extension PHZoomTransitioning {
         snapshot.removeFromSuperview()
         toView.mask = nil
         overlay.removeFromSuperview()
-        placeholder.removeFromSuperview()
         context.completeTransition(true)
       }
     }
@@ -212,13 +207,7 @@ extension PHZoomTransitioning {
       $0.frame = toView.frame
     }
     
-    let placeholder = UIView().then {
-      $0.backgroundColor = config.placeholderColor
-      $0.frame = toFrame
-    }
-    
     fromView.mask = mask
-    toView.addSubview(placeholder)
     toView.addSubview(overlay)
     
     // Position snapshot initially invisible
@@ -229,8 +218,9 @@ extension PHZoomTransitioning {
     let maskFrame = toFrame.aspectFit(to: fromFrame)
     
     // Create blur effect for morphing
-    let blurEffect = UIBlurEffect(style: .systemUltraThinMaterial)
+    let blurEffect = config.maskVisualEffect
     let blurView = UIVisualEffectView(effect: nil)
+    blurView.alpha = 0.0
     blurView.frame = fromView.bounds
     blurView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     fromView.insertSubview(blurView, belowSubview: snapshot)
@@ -254,6 +244,8 @@ extension PHZoomTransitioning {
         overlay.layer.opacity = 0
         snapshot.frame = maskFrame
         snapshot.layer.cornerRadius = 0
+        blurView.contentView.backgroundColor = snapshot.backgroundColor
+        blurView.alpha = 1.0
         
       } completion: { _ in
         self.sourceView?.isHidden = false
@@ -261,7 +253,6 @@ extension PHZoomTransitioning {
         blurView.removeFromSuperview()
         snapshot.removeFromSuperview()
         overlay.removeFromSuperview()
-        placeholder.removeFromSuperview()
         let isCancelled = context.transitionWasCancelled
         context.completeTransition(!isCancelled)
       }
@@ -281,7 +272,7 @@ extension PHZoomTransitioning {
         springDuration: morphDuration,
         bounce: 0.0,
         initialSpringVelocity: 10.0,
-        delay: config.duration * 0.5,
+        delay: config.maskVisualEffect == nil ? (config.duration * 0.3) : config.duration * 0.5,
         options: .curveEaseInOut
       ) {
         snapshot.alpha = 1.0

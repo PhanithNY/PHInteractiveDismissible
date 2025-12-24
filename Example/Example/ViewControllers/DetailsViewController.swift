@@ -10,27 +10,7 @@ import PHInteractiveDismissible
 import UIKit
 
 final class DetailsViewController: UIViewController, InteractiveDismissible, ZoomTransitioning {
-  
-  var sharedFrame: CGRect {
-    view.bounds
-  }
-  
-  var config: PHInteractiveDismissible.ZoomTransitionConfig? {
-    return .init(
-      duration: 0.5,
-      maskCornerRadius: UIScreen.main.displayCornerRadius,
-      overlayOpacity: 0.0,
-      interactionScaleFactor: 0.6,
-      placeholderColor: .clear,
-      sourceView: view
-    )
-  }
-  
-  func prepare(for transition: PHInteractiveDismissible.PHZoomTransitioning.Transition) {
-    
-  }
-  
-  
+
   var dismissibleScrollView: UIScrollView? { nil }
   var interactiveTransitionManager: (any UIViewControllerTransitioningDelegate)?
   var preferredCornerRadius: CGFloat? {
@@ -140,7 +120,7 @@ extension UINavigationController: @retroactive ZoomTransitioning {
   }
   
   public func prepare(for transition: PHInteractiveDismissible.PHZoomTransitioning.Transition) {
-    
+    (topViewController as? ZoomTransitioning)?.prepare(for: transition)
   }
   
   public var config: PHInteractiveDismissible.ZoomTransitionConfig? {

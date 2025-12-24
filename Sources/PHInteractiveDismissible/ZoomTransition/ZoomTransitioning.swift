@@ -21,10 +21,16 @@ extension ZoomTransitioning {
   var config: ZoomTransitionConfig? { nil }
 }
 
+public extension ZoomTransitioning where Self: UIViewController {
+  func prepare(for transition: PHZoomTransitioning.Transition) {}
+  var config: ZoomTransitionConfig? { nil }
+  var sharedFrame: CGRect { view.bounds }
+}
+
 extension UIViewControllerContextTransitioning {
   func sharedFrame(forKey key: UITransitionContextViewControllerKey) -> CGRect? {
     let viewController = viewController(forKey: key)
-    viewController?.view.layoutIfNeeded()
+//    viewController?.view.layoutIfNeeded()
     if let navigationController = viewController as? UINavigationController {
       return (navigationController.topViewController as? ZoomTransitioning)?.sharedFrame
     }

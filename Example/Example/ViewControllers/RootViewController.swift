@@ -11,25 +11,33 @@ import UIKit
 
 final class RootViewController: UIViewController, ZoomTransitioning {
 
-  var sharedFrame: CGRect {
-    selectedCell!.iconContainerView.convert(selectedCell!.iconContainerView.bounds, to: nil)
+  private var sourceView: UIView? {
+    (navigationItem.rightBarButtonItem?.value(forKey: "view") as? UIView)?.superview?.superview?.superview?.superview?.superview?.superview?.superview?.superview?.superview?.superview
   }
   
-  var config: PHInteractiveDismissible.ZoomTransitionConfig?
+  var sharedFrame: CGRect {
+    if tapBarItem, let sourceView {
+      let frame = sourceView.convert(sourceView.bounds, to: nil)
+      print(frame)
+      return frame
+    }
+    return selectedCell!.iconContainerView.convert(selectedCell!.iconContainerView.bounds, to: nil)
+  }
   
-  func prepare(for transition: PHInteractiveDismissible.PHZoomTransitioning.Transition) {
-    
+  var config: PHInteractiveDismissible.ZoomTransitionConfig? {
+    return .init(
+      duration: 0.5,
+      maskVisualEffect: nil,
+      overlayOpacity: 0.250,
+      sourceView: tapBarItem ? sourceView : selectedCell?.iconContainerView
+    )
   }
   
   // MARK: - Properties
   
-  private var transitionAnimator: PHZoomTransitioning = .init(sourceView: nil)
   var delegate = PHZoomTransitioningDelegate(interactionController: nil, sourceView: .init())
-  private var selectedCell: GridCell? {
-    didSet {
-      transitionAnimator = .init(sourceView: selectedCell?.iconContainerView)
-    }
-  }
+  private var selectedCell: GridCell?
+  private var tapBarItem: Bool = false
   
   private var items: [GridItem] = [
     .init(name: "Item 1", symbolName: "checkmark"),
@@ -72,17 +80,28 @@ final class RootViewController: UIViewController, ZoomTransitioning {
     present(navigationController, dismissalType: .interactive, animated: true)
   }
   
-  private func zoom(from indexPath: IndexPath) {
-    selectedCell = collectionView.cellForItem(at: indexPath) as! GridCell
+  @objc
+  private func back(_ sender: UIBarButtonItem) {
+    tapBarItem = true
+    let controller = DetailsViewController()
+    let navigationController = UINavigationController(rootViewController: controller)
     
-    config = .init(
-      duration: 0.5,
-      maskCornerRadius: UIScreen.main.displayCornerRadius,
-      overlayOpacity: 0.0,
-      interactionScaleFactor: 0.6,
-      placeholderColor: .clear,
-      sourceView: selectedCell?.iconContainerView
-    )
+    if #available(iOS 26.0, *) {
+      navigationController.preferredTransition = .zoom(sourceBarButtonItemProvider: { context in
+        sender
+      })
+    } else if #available(iOS 18.0, *) {
+      navigationController.preferredTransition = .zoom(sourceViewProvider: { context in
+        sender.value(forKey: "view") as? UIView
+      })
+    }
+    
+    present(navigationController, animated: true)
+  }
+  
+  private func zoom(from indexPath: IndexPath) {
+    tapBarItem = false
+    selectedCell = collectionView.cellForItem(at: indexPath) as? GridCell
     
     let controller = DetailsViewController()
     let navigationController = UINavigationController(rootViewController: controller)
@@ -138,6 +157,13 @@ final class RootViewController: UIViewController, ZoomTransitioning {
     view.backgroundColor = .systemBackground
     navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Push", style: .plain, target: self, action: #selector(push))
     
+    let barItem = UIBarButtonItem.init(image: UIImage(systemName: "chevron.left"), style: .plain, target: self, action: #selector(back(_:)))
+    navigationItem.leftBarButtonItem = barItem
+    
+//    DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(2)) {
+//      print(barItem.value(forKey: "view"), barItem.customView)
+//    }
+    
     collectionView.layout {
       view.addSubview($0)
       $0.top()
@@ -172,17 +198,5 @@ extension RootViewController: UICollectionViewDataSource {
 extension RootViewController: UICollectionViewDelegate {
   func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
     zoom(from: indexPath)
-  }
-}
-
-extension RootViewController: UIViewControllerTransitioningDelegate {
-  func animationController(forPresented presented: UIViewController, presenting: UIViewController, source: UIViewController) -> (any UIViewControllerAnimatedTransitioning)? {
-    transitionAnimator.transition = .present
-    return transitionAnimator
-  }
-  
-  func animationController(forDismissed dismissed: UIViewController) -> (any UIViewControllerAnimatedTransitioning)? {
-    transitionAnimator.transition = .dismiss
-    return transitionAnimator
   }
 }

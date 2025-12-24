@@ -11,16 +11,18 @@ public struct ZoomTransitionConfig {
   var duration: CGFloat
   var maskCornerRadius: CGFloat
   var overlayOpacity: Float
-  var interactionScaleFactor: CGFloat = .zero
-  var placeholderColor: UIColor
   var sourceView: UIView?
+  var maskVisualEffect: UIVisualEffect?
   
-  public init(duration: CGFloat, maskCornerRadius: CGFloat, overlayOpacity: Float, interactionScaleFactor: CGFloat, placeholderColor: UIColor, sourceView: UIView?) {
+  public init(duration: CGFloat,
+              maskCornerRadius: CGFloat = UIScreen.main.displayCornerRadius,
+              maskVisualEffect: UIVisualEffect?,
+              overlayOpacity: Float,
+              sourceView: UIView?) {
     self.duration = duration
     self.maskCornerRadius = maskCornerRadius
     self.overlayOpacity = overlayOpacity
-    self.interactionScaleFactor = interactionScaleFactor
-    self.placeholderColor = placeholderColor
+    self.maskVisualEffect = maskVisualEffect
     self.sourceView = sourceView
   }
 }
@@ -28,11 +30,9 @@ public struct ZoomTransitionConfig {
 extension ZoomTransitionConfig {
   public static var `default`: ZoomTransitionConfig {
     .init(
-      duration: 0.35,
-      maskCornerRadius: UIScreen.main.displayCornerRadius,
+      duration: 0.5,
+      maskVisualEffect: UIBlurEffect(style: .dark),
       overlayOpacity: 0.5,
-      interactionScaleFactor: 0.6,
-      placeholderColor: .clear,
       sourceView: nil
     )
   }
