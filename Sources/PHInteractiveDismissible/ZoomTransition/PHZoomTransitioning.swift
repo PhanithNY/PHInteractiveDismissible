@@ -117,29 +117,30 @@ extension PHZoomTransitioning {
     let blurView = UIVisualEffectView(effect: blurEffect)
     blurView.frame = toView.bounds
     blurView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    toView.insertSubview(blurView, belowSubview: snapshot)
+//    toView.insertSubview(blurView, belowSubview: snapshot)
+    toView.addSubview(blurView)
     
     // Calculate morph timing - fade out in first 25% of animation
     let morphDuration = config.duration * 0.25
     
     if #available(iOS 17.0, *) {
+      
       // Fade out snapshot and blur quickly at the beginning
       UIView.animate(
         springDuration: morphDuration,
         bounce: 0.0,
-        initialSpringVelocity: 0.0,
+        initialSpringVelocity: 10.0,
         delay: 0.0,
-        options: .curveEaseOut
+        options: .curveEaseInOut
       ) {
         snapshot.alpha = 0.0
       }
       
-      // can remove
       UIView.animate(
-        springDuration: config.duration * 0.25,
+        springDuration: morphDuration,
         bounce: 0.075,
-        initialSpringVelocity: 10.0,
-        delay: 0.0,
+        initialSpringVelocity: 0.0,
+        delay: config.duration * 0.15,
         options: .curveEaseInOut
       ) {
         blurView.effect = nil
