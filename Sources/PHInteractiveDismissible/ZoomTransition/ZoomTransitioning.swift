@@ -8,6 +8,9 @@
 import UIKit
 
 public protocol ZoomTransitioning {
+  
+  typealias Options = (fromView: UIView, fromRect: CGRect, toView: UIView, toRect: CGRect)
+  
   var sharedFrame: CGRect { get }
   var config: ZoomTransitionConfig? { get }
   func prepare(for transition: PHZoomTransitioning.Transition)
