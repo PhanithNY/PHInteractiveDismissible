@@ -8,23 +8,35 @@
 import UIKit
 
 public protocol ZoomTransitioning {
-  
   typealias Options = (fromView: UIView, fromRect: CGRect, toView: UIView, toRect: CGRect)
   
   var sharedFrame: CGRect { get }
-  var config: ZoomTransitionConfig? { get }
+  var config: ZoomOptions? { get }
   func prepare(for transition: PHZoomTransitioning.Transition)
 }
 
-extension ZoomTransitioning {
-  func prepare(for transition: PHZoomTransitioning.Transition) {}
-  var config: ZoomTransitionConfig? { nil }
+public extension ZoomTransitioning {
+  var config: ZoomOptions? {
+    nil
+  }
+  
+  func prepare(for transition: PHZoomTransitioning.Transition) {
+    
+  }
 }
 
 public extension ZoomTransitioning where Self: UIViewController {
-  func prepare(for transition: PHZoomTransitioning.Transition) {}
-  var config: ZoomTransitionConfig? { nil }
-  var sharedFrame: CGRect { view.bounds }
+  var config: ZoomOptions? {
+    nil
+  }
+  
+  var sharedFrame: CGRect {
+    view.bounds
+  }
+  
+  func prepare(for transition: PHZoomTransitioning.Transition) {
+    
+  }
 }
 
 extension UIViewControllerContextTransitioning {
@@ -35,29 +47,5 @@ extension UIViewControllerContextTransitioning {
       return (navigationController.topViewController as? ZoomTransitioning)?.sharedFrame
     }
     return (viewController as? ZoomTransitioning)?.sharedFrame
-  }
-}
-
-
-import UIKit
-
-struct CornerRadiusProvider {
-  static var notchCornerRadius: CGFloat {
-    UIScreen.main.displayCornerRadius
-  }
-}
-
-extension UIScreen {
-  private static let cornerRadiusKey: String = {
-    let components = ["Radius", "Corner", "display", "_"]
-    return components.reversed().joined()
-  }()
-  
-  public var displayCornerRadius: CGFloat {
-    guard let cornerRadius = self.value(forKey: Self.cornerRadiusKey) as? CGFloat else {
-      return 0
-    }
-    
-    return cornerRadius
   }
 }

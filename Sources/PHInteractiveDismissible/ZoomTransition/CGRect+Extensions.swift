@@ -18,7 +18,7 @@ extension CGRect {
     }
   }
   
-  func aspectFitWidth(to frame: CGRect) -> CGRect {
+  private func aspectFitWidth(to frame: CGRect) -> CGRect {
     let ratio = width / height
     let height = frame.width * ratio
     let offsetY = (frame.height - height) / 2
@@ -27,7 +27,7 @@ extension CGRect {
     return CGRect(origin: origin, size: size)
   }
   
-  func aspectFitHeight(to frame: CGRect) -> CGRect {
+  private func aspectFitHeight(to frame: CGRect) -> CGRect {
     let ratio = height / width
     let width = frame.height * ratio
     let offsetX = (frame.width - width) / 2

@@ -24,7 +24,7 @@ public class PHZoomTransitioning: NSObject {
   
   private var sourceView: UIView?
   
-  private var config: ZoomTransitionConfig = .default
+  private var config: ZoomOptions = .default
   
 }
 

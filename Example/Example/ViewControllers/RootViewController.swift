@@ -23,7 +23,7 @@ final class RootViewController: UIViewController, ZoomTransitioning {
     return selectedCell!.iconContainerView.convert(selectedCell!.iconContainerView.bounds, to: nil)
   }
   
-  var config: PHInteractiveDismissible.ZoomTransitionConfig? {
+  var config: PHInteractiveDismissible.ZoomOptions? {
     return .init(
       duration: 0.5,
       maskVisualEffect: nil,
@@ -159,10 +159,6 @@ final class RootViewController: UIViewController, ZoomTransitioning {
     
     let barItem = UIBarButtonItem.init(image: UIImage(systemName: "chevron.left"), style: .plain, target: self, action: #selector(back(_:)))
     navigationItem.leftBarButtonItem = barItem
-    
-//    DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(2)) {
-//      print(barItem.value(forKey: "view"), barItem.customView)
-//    }
     
     collectionView.layout {
       view.addSubview($0)

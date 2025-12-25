@@ -123,7 +123,7 @@ extension UINavigationController: @retroactive ZoomTransitioning {
     (topViewController as? ZoomTransitioning)?.prepare(for: transition)
   }
   
-  public var config: PHInteractiveDismissible.ZoomTransitionConfig? {
+  public var config: PHInteractiveDismissible.ZoomOptions? {
     (topViewController as? ZoomTransitioning)?.config
   }
 }
