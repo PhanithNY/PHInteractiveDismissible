@@ -8,16 +8,16 @@
 import UIKit
 
 public struct ZoomTransitionConfig {
-  var duration: CGFloat
+  var duration: TimeInterval
   var maskCornerRadius: CGFloat
-  var overlayOpacity: Float
+  var overlayOpacity: CGFloat
   var sourceView: UIView?
   var maskVisualEffect: UIVisualEffect?
   
-  public init(duration: CGFloat,
+  public init(duration: TimeInterval,
               maskCornerRadius: CGFloat = UIScreen.main.displayCornerRadius,
               maskVisualEffect: UIVisualEffect?,
-              overlayOpacity: Float,
+              overlayOpacity: CGFloat,
               sourceView: UIView?) {
     self.duration = duration
     self.maskCornerRadius = maskCornerRadius

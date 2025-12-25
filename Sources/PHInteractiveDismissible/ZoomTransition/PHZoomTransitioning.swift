@@ -22,21 +22,16 @@ public class PHZoomTransitioning: NSObject {
   
   public var transition: Transition = .present
   
-  public var sourceView: UIView?
-  private var snapshotView: UIView?
+  private var sourceView: UIView?
+  
   private var config: ZoomTransitionConfig = .default
   
-  public init(sourceView: UIView?) {
-    self.sourceView = sourceView
-  }
 }
 
 // MARK: - UIViewControllerAnimatedTransitioning
 
 extension PHZoomTransitioning: UIViewControllerAnimatedTransitioning {
-  public func transitionDuration(
-    using transitionContext: UIViewControllerContextTransitioning?
-  ) -> TimeInterval {
+  public func transitionDuration(using transitionContext: UIViewControllerContextTransitioning?) -> TimeInterval {
     config.duration
   }
   
@@ -59,13 +54,19 @@ extension PHZoomTransitioning {
   private func animationForPresentation(from context: UIViewControllerContextTransitioning) {
     
     // Create and cache snapshot of the source view
-    guard let sourceView,
+    guard let sourceView = config.sourceView,
           let snapshot = sourceView.resizableSnapshotView(from: sourceView.bounds, afterScreenUpdates: false, withCapInsets: .zero) else {
       return
     }
+    
     snapshot.layer.cornerRadius = sourceView.layer.cornerRadius
-    snapshot.backgroundColor = sourceView.backgroundColor
-    snapshotView = snapshot
+    if let superviewBackgroundColor = snapshot.superview?.backgroundColor {
+      snapshot.backgroundColor = sourceView.backgroundColor?.opaqueColor(over: superviewBackgroundColor)
+    } else {
+      snapshot.backgroundColor = sourceView.backgroundColor
+    }
+    
+    self.sourceView = snapshot
     
     guard let options = transitioningOptions(for: context) else {
       context.completeTransition(false)
@@ -84,8 +85,8 @@ extension PHZoomTransitioning {
     )
     
     let transform = result.transform
-    
     let maskFrame = fromFrame.aspectFit(to: toFrame)
+    
     let mask = UIView(frame: maskFrame).then {
       $0.backgroundColor = .black
       $0.layer.masksToBounds = true
@@ -116,53 +117,52 @@ extension PHZoomTransitioning {
     
     // Calculate morph timing - fade out in first 25% of animation
     let morphDuration = config.duration * 0.25
+    let blurEffectDelayDuration: TimeInterval = config.duration * 0.15
+    let springDuration: TimeInterval = config.duration * 0.75
+    config.sourceView?.isHidden = true
     
-    self.sourceView?.isHidden = true
-    if #available(iOS 17.0, *) {
-      
-      // Fade out snapshot and blur quickly at the beginning
-      UIView.animate(
-        springDuration: config.maskVisualEffect == nil ? config.duration * 0.1 : morphDuration,
-        bounce: 0.0,
-        initialSpringVelocity: 10.0,
-        delay: 0.0,
-        options: .curveEaseInOut
-      ) {
-        snapshot.alpha = 0.0
-        blurView.contentView.backgroundColor = toView.backgroundColor
-      }
-      
-      UIView.animate(
-        springDuration: morphDuration,
-        bounce: 0.0,
-        initialSpringVelocity: 0.0,
-        delay: config.duration * 0.15,
-        options: .curveEaseInOut
-      ) {
-        blurView.effect = nil
-      }
-      
-      // Main zoom animation with subtle bounce
-      UIView.animate(
-        springDuration: config.duration * 0.75,
-        bounce: 0.075,
-        initialSpringVelocity: 0.0,
-        delay: 0.0,
-        options: .curveEaseInOut
-      ) {
-        toView.transform = .identity
-        mask.frame = toView.frame
-        mask.layer.cornerRadius = self.config.maskCornerRadius
-        overlay.layer.opacity = self.config.overlayOpacity
-        snapshot.frame = toView.frame
-      } completion: { _ in
-        self.sourceView?.isHidden = true
-        blurView.removeFromSuperview()
-        snapshot.removeFromSuperview()
-        toView.mask = nil
-        overlay.removeFromSuperview()
-        context.completeTransition(true)
-      }
+    // Fade out snapshot and blur quickly at the beginning
+    UIView.springAnimate(
+      springDuration: config.maskVisualEffect == nil ? config.duration * 0.1 : morphDuration,
+      bounce: 0.0,
+      initialSpringVelocity: 10.0,
+      delay: 0.0,
+      options: .curveEaseInOut
+    ) {
+      snapshot.alpha = 0.0
+      blurView.contentView.backgroundColor = toView.backgroundColor
+    }
+    
+    UIView.springAnimate(
+      springDuration: morphDuration,
+      bounce: 0.0,
+      initialSpringVelocity: 0.0,
+      delay: blurEffectDelayDuration,
+      options: .curveEaseInOut
+    ) {
+      blurView.effect = nil
+    }
+    
+    // Main zoom animation with subtle bounce
+    UIView.springAnimate(
+      springDuration: springDuration,
+      bounce: 0.075,
+      initialSpringVelocity: 0.0,
+      delay: 0.0,
+      options: .curveEaseInOut
+    ) { [self] in
+      toView.transform = .identity
+      mask.frame = toView.frame
+      mask.layer.cornerRadius = config.maskCornerRadius
+      overlay.layer.opacity = Float(config.overlayOpacity)
+      snapshot.frame = toView.frame
+    } completion: { [self] _ in
+      config.sourceView?.isHidden = true
+      blurView.removeFromSuperview()
+      snapshot.removeFromSuperview()
+      toView.mask = nil
+      overlay.removeFromSuperview()
+      context.completeTransition(true)
     }
   }
   
@@ -178,16 +178,7 @@ extension PHZoomTransitioning {
     let toFrame = options.toRect
     
     // Use the cached snapshot from presentation
-    let snapshot = snapshotView!
-    if let sourceView {
-      snapshot.layer.cornerRadius = sourceView.layer.cornerRadius
-      if let superviewBackgroundColor = snapshot.superview?.backgroundColor {
-        snapshot.backgroundColor = sourceView.backgroundColor?.opaqueColor(
-          over: superviewBackgroundColor)
-      } else {
-        snapshot.backgroundColor = sourceView.backgroundColor
-      }
-    }
+    let snapshot = sourceView.unsafelyUnwrapped
     
     let result = CGAffineTransform.transform(
       parent: fromView.frame,
@@ -203,7 +194,7 @@ extension PHZoomTransitioning {
     
     let overlay = UIView().then {
       $0.backgroundColor = .black
-      $0.layer.opacity = config.overlayOpacity
+      $0.layer.opacity = Float(config.overlayOpacity)
       $0.frame = toView.frame
     }
     
@@ -226,57 +217,54 @@ extension PHZoomTransitioning {
     fromView.insertSubview(blurView, belowSubview: snapshot)
     
     // Calculate morph timing - start at 75% of the animation
-    let morphDelay = config.duration * 0.75
+    let morphDelay = config.maskVisualEffect == nil ? (config.duration * 0.3) : config.duration * 0.5
     let morphDuration = config.duration * 0.25
     
-    if #available(iOS 17.0, *) {
+    UIView.springAnimate(
+      springDuration: config.duration,
+      bounce: 0.1,
+      initialSpringVelocity: 0.0,
+      delay: 0.0,
+      options: [.curveEaseInOut, .allowUserInteraction]
+    ) {
+      fromView.transform = result.transform
+      mask.frame = maskFrame
+      mask.layer.cornerRadius = snapshot.layer.cornerRadius / result.scaleFactor
+      overlay.layer.opacity = 0
+      snapshot.frame = maskFrame
+      snapshot.layer.cornerRadius = 0
+      blurView.contentView.backgroundColor = snapshot.backgroundColor
+      blurView.alpha = 1.0
       
-      UIView.animate(
-        springDuration: config.duration,
-        bounce: 0.1,
-        initialSpringVelocity: 0.0,
-        delay: 0.0,
-        options: [.curveEaseInOut, .allowUserInteraction]
-      ) {
-        fromView.transform = result.transform
-        mask.frame = maskFrame
-        mask.layer.cornerRadius = snapshot.layer.cornerRadius / result.scaleFactor
-        overlay.layer.opacity = 0
-        snapshot.frame = maskFrame
-        snapshot.layer.cornerRadius = 0
-        blurView.contentView.backgroundColor = snapshot.backgroundColor
-        blurView.alpha = 1.0
-        
-      } completion: { _ in
-        self.sourceView?.isHidden = false
-        fromView.mask = nil
-        blurView.removeFromSuperview()
-        snapshot.removeFromSuperview()
-        overlay.removeFromSuperview()
-        let isCancelled = context.transitionWasCancelled
-        context.completeTransition(!isCancelled)
-      }
-      
-      UIView.animate(
-        springDuration: morphDuration,
-        bounce: 0.0,
-        initialSpringVelocity: 0.0,
-        delay: config.duration * 0.15,
-        options: .curveEaseInOut
-      ) {
-        blurView.effect = blurEffect
-      }
-      
-      // Morph animation: crossfade to snapshot during blur
-      UIView.animate(
-        springDuration: morphDuration,
-        bounce: 0.0,
-        initialSpringVelocity: 10.0,
-        delay: config.maskVisualEffect == nil ? (config.duration * 0.3) : config.duration * 0.5,
-        options: .curveEaseInOut
-      ) {
-        snapshot.alpha = 1.0
-      }
+    } completion: { _ in
+      self.config.sourceView?.isHidden = false
+      fromView.mask = nil
+      blurView.removeFromSuperview()
+      snapshot.removeFromSuperview()
+      overlay.removeFromSuperview()
+      let isCancelled = context.transitionWasCancelled
+      context.completeTransition(!isCancelled)
+    }
+    
+    UIView.springAnimate(
+      springDuration: morphDuration,
+      bounce: 0.0,
+      initialSpringVelocity: 0.0,
+      delay: config.duration * 0.15,
+      options: .curveEaseInOut
+    ) {
+      blurView.effect = blurEffect
+    }
+    
+    // Morph animation: crossfade to snapshot during blur
+    UIView.springAnimate(
+      springDuration: morphDuration,
+      bounce: 0.0,
+      initialSpringVelocity: 10.0,
+      delay: morphDelay,
+      options: .curveEaseInOut
+    ) {
+      snapshot.alpha = 1.0
     }
   }
 }
@@ -313,4 +301,30 @@ extension PHZoomTransitioning {
     
     return ZoomTransitioning.Options(fromView: fromView, fromRect: fromRect, toView: toView, toRect: toRect)
   }
+}
+
+extension UIView {
+  
+  public class func springAnimate(springDuration duration: TimeInterval = 0.5,
+                                  bounce: CGFloat = 0.0,
+                                  initialSpringVelocity: CGFloat = 0.0,
+                                  delay: TimeInterval = 0.0,
+                                  options: AnimationOptions,
+                                  animation: @escaping () -> Void,
+                                  completion: ((Bool) -> Swift.Void)? = nil) {
+    if #available(iOS 17.0, *) {
+      UIView.animate(springDuration: duration, bounce: bounce, initialSpringVelocity: initialSpringVelocity, delay: delay, options: options) {
+        animation()
+      } completion: { finished in
+        completion?(finished)
+      }
+    } else {
+      UIView.animate(withDuration: duration, delay: delay, usingSpringWithDamping: 1.0 - bounce, initialSpringVelocity: initialSpringVelocity, options: options) {
+        animation()
+      } completion: { finished in
+        completion?(finished)
+      }
+    }
+  }
+  
 }

@@ -18,7 +18,6 @@ final class RootViewController: UIViewController, ZoomTransitioning {
   var sharedFrame: CGRect {
     if tapBarItem, let sourceView {
       let frame = sourceView.convert(sourceView.bounds, to: nil)
-      print(frame)
       return frame
     }
     return selectedCell!.iconContainerView.convert(selectedCell!.iconContainerView.bounds, to: nil)
@@ -35,7 +34,7 @@ final class RootViewController: UIViewController, ZoomTransitioning {
   
   // MARK: - Properties
   
-  var delegate = PHZoomTransitioningDelegate(interactionController: nil, sourceView: .init())
+  var delegate = PHZoomTransitioningDelegate(interactionController: nil)
   private var selectedCell: GridCell?
   private var tapBarItem: Bool = false
   
@@ -105,7 +104,7 @@ final class RootViewController: UIViewController, ZoomTransitioning {
     
     let controller = DetailsViewController()
     let navigationController = UINavigationController(rootViewController: controller)
-    delegate = .init(interactionController: nil, sourceView: selectedCell!.iconContainerView)
+    delegate = .init(interactionController: nil)
     
     if indexPath.item > 0 {
       navigationController.transitioningDelegate = delegate
