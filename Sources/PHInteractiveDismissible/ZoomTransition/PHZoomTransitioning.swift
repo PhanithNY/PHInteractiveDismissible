@@ -94,7 +94,7 @@ extension PHZoomTransitioning {
     }
     
     let overlay = UIView().then {
-      $0.backgroundColor = .black
+      $0.backgroundColor = config.dimmingColor
       $0.layer.opacity = 0
       $0.frame = fromView.frame
     }
@@ -154,7 +154,7 @@ extension PHZoomTransitioning {
       toView.transform = .identity
       mask.frame = toView.frame
       mask.layer.cornerRadius = config.maskCornerRadius
-      overlay.layer.opacity = Float(config.overlayOpacity)
+      overlay.layer.opacity = 1.0
       snapshot.frame = toView.frame
     } completion: { [self] _ in
       config.sourceView?.isHidden = true
@@ -193,8 +193,8 @@ extension PHZoomTransitioning {
     }
     
     let overlay = UIView().then {
-      $0.backgroundColor = .black
-      $0.layer.opacity = Float(config.overlayOpacity)
+      $0.backgroundColor = config.dimmingColor
+      $0.layer.opacity = 1.0
       $0.frame = toView.frame
     }
     
