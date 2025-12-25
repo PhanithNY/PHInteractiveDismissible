@@ -27,7 +27,7 @@ final class RootViewController: UIViewController, ZoomTransitioning {
     return .init(
       duration: 0.5,
       maskVisualEffect: nil,
-//      dimmingColor: UIColor.red,
+      dimmingColor: UIColor.black.withAlphaComponent(0.25),
       dimmingVisualEffect: nil,
       sourceView: tapBarItem ? sourceView : selectedCell?.iconContainerView
     )

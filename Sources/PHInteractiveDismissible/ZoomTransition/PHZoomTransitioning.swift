@@ -59,6 +59,8 @@ extension PHZoomTransitioning {
       return
     }
     
+    // Clone all available properties to new snapshot
+    // Currently only background color and cornerRadius
     snapshot.layer.cornerRadius = sourceView.layer.cornerRadius
     if let superviewBackgroundColor = snapshot.superview?.backgroundColor {
       snapshot.backgroundColor = sourceView.backgroundColor?.opaqueColor(over: superviewBackgroundColor)
@@ -66,6 +68,7 @@ extension PHZoomTransitioning {
       snapshot.backgroundColor = sourceView.backgroundColor
     }
     
+    // Save it to reuse later
     self.sourceView = snapshot
     
     guard let options = transitioningOptions(for: context) else {
@@ -87,41 +90,72 @@ extension PHZoomTransitioning {
     let transform = result.transform
     let maskFrame = fromFrame.aspectFit(to: toFrame)
     
+    // Set frame for our snapshot view
+    snapshot.frame = maskFrame
+    
+    // Represent the starting corner radius for our mask view
+    let initialCornerRadius: CGFloat = snapshot.layer.cornerRadius / result.scaleFactor
+    
+    // Represent the final corner radius for our mask view
+    let finalCornerRadius: CGFloat = config.maskCornerRadius
+    
+    // Our mask view
     let mask = UIView(frame: maskFrame).then {
       $0.backgroundColor = .black
       $0.layer.masksToBounds = true
-      $0.layer.cornerRadius = snapshot.layer.cornerRadius / result.scaleFactor
+      $0.layer.cornerRadius = initialCornerRadius
     }
     
+    // Our overlay view
     let overlay = UIView().then {
       $0.backgroundColor = config.dimmingColor
       $0.layer.opacity = 0
       $0.frame = fromView.frame
     }
     
+    // Our dimmingEffect view
+    let dimmingView = makeDimmingVisualEffectView().then {
+      $0.effect = nil
+      $0.frame = toView.bounds
+    }
+    
+    // Mask our target view
     toView.mask = mask
     toView.transform = transform
+    
+    // Add overlay view to our current view, fromView in this case
     fromView.addSubview(overlay)
     
+    // Add blur view to our current view, fromView in this case
+    fromView.addSubview(dimmingView)
+    
     // Position snapshot to match the mask
-    snapshot.frame = maskFrame
     toView.addSubview(snapshot)
     
     // Create blur effect for morphing
-    let blurEffect = config.maskVisualEffect
-    let blurView = UIVisualEffectView(effect: blurEffect)
-    blurView.contentView.backgroundColor = snapshot.backgroundColor
-    blurView.frame = toView.bounds
-    blurView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    let maskVisualEffect = config.maskVisualEffect
+    let blurView = UIVisualEffectView(effect: maskVisualEffect).then {
+      $0.contentView.backgroundColor = snapshot.backgroundColor
+      $0.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      $0.frame = toView.bounds
+    }
+    
+    // Position blurView to match the mask
     toView.addSubview(blurView)
     
-    // Calculate morph timing - fade out in first 25% of animation
+    // Duration to morph from snapshot and blur view to destination view.
     let morphDuration = config.duration * 0.25
-    let blurEffectDelayDuration: TimeInterval = config.duration * 0.15
+    
+    // Delay duration for blur effect from effect to nil
+    let delayMorphDuration: TimeInterval = config.duration * 0.15
+    
+    // The animation duration
     let springDuration: TimeInterval = config.duration * 0.75
+    
+    // Hide sourceView
     config.sourceView?.isHidden = true
     
-    // Fade out snapshot and blur quickly at the beginning
+    // Fade out snapshot
     UIView.springAnimate(
       springDuration: config.maskVisualEffect == nil ? config.duration * 0.1 : morphDuration,
       bounce: 0.0,
@@ -133,11 +167,12 @@ extension PHZoomTransitioning {
       blurView.contentView.backgroundColor = toView.backgroundColor
     }
     
+    // Remove blur
     UIView.springAnimate(
       springDuration: morphDuration,
       bounce: 0.0,
       initialSpringVelocity: 0.0,
-      delay: blurEffectDelayDuration,
+      delay: delayMorphDuration,
       options: .curveEaseInOut
     ) {
       blurView.effect = nil
@@ -153,8 +188,9 @@ extension PHZoomTransitioning {
     ) { [self] in
       toView.transform = .identity
       mask.frame = toView.frame
-      mask.layer.cornerRadius = config.maskCornerRadius
+      mask.layer.cornerRadius = finalCornerRadius
       overlay.layer.opacity = 1.0
+      dimmingView.effect = config.dimmingVisualEffect
       snapshot.frame = toView.frame
     } completion: { [self] _ in
       config.sourceView?.isHidden = true
@@ -162,6 +198,7 @@ extension PHZoomTransitioning {
       snapshot.removeFromSuperview()
       toView.mask = nil
       overlay.removeFromSuperview()
+      dimmingView.removeFromSuperview()
       context.completeTransition(true)
     }
   }
@@ -178,7 +215,10 @@ extension PHZoomTransitioning {
     let toFrame = options.toRect
     
     // Use the cached snapshot from presentation
-    let snapshot = sourceView.unsafelyUnwrapped
+    let snapshot = sourceView.unsafelyUnwrapped.then {
+      $0.alpha = 0.0
+      $0.frame = fromFrame
+    }
     
     let result = CGAffineTransform.transform(
       parent: fromView.frame,
@@ -186,39 +226,52 @@ extension PHZoomTransitioning {
       aspectFills: toFrame
     )
     
+    // Our mask view
     let mask = UIView(frame: fromView.frame).then {
       $0.backgroundColor = .black
       $0.layer.cornerRadius = config.maskCornerRadius
       $0.layer.masksToBounds = true
     }
     
+    // Our overlay view
     let overlay = UIView().then {
       $0.backgroundColor = config.dimmingColor
       $0.layer.opacity = 1.0
       $0.frame = toView.frame
     }
     
+    // Our dimmingEffect view
+    let dimmingView = makeDimmingVisualEffectView().then {
+      $0.frame = toView.frame
+    }
+    
     fromView.mask = mask
+    
+    // Position overlay on top of destination view, in this case toView
     toView.addSubview(overlay)
     
-    // Position snapshot initially invisible
-    snapshot.alpha = 0.0
-    snapshot.frame = fromFrame
+    // Position blur effect on top of overlay
+    toView.addSubview(dimmingView)
+    
+    // Position snapshot
     fromView.addSubview(snapshot)
     
     let maskFrame = toFrame.aspectFit(to: fromFrame)
     
     // Create blur effect for morphing
     let blurEffect = config.maskVisualEffect
-    let blurView = UIVisualEffectView(effect: nil)
-    blurView.alpha = 0.0
-    blurView.frame = fromView.bounds
-    blurView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    let blurView = UIVisualEffectView(effect: nil).then {
+      $0.alpha = 0.0
+      $0.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      $0.frame = fromView.bounds
+    }
     fromView.insertSubview(blurView, belowSubview: snapshot)
     
-    // Calculate morph timing - start at 75% of the animation
-    let morphDelay = config.maskVisualEffect == nil ? (config.duration * 0.3) : config.duration * 0.5
+    // The duration for morph between zero blur to fully blur with snapshot visible
     let morphDuration = config.duration * 0.25
+    
+    // Calculate morph timing
+    let morphDelay = config.maskVisualEffect == nil ? (config.duration * 0.3) : config.duration * 0.5
     
     UIView.springAnimate(
       springDuration: config.duration,
@@ -231,6 +284,7 @@ extension PHZoomTransitioning {
       mask.frame = maskFrame
       mask.layer.cornerRadius = snapshot.layer.cornerRadius / result.scaleFactor
       overlay.layer.opacity = 0
+      dimmingView.effect = nil
       snapshot.frame = maskFrame
       snapshot.layer.cornerRadius = 0
       blurView.contentView.backgroundColor = snapshot.backgroundColor
@@ -242,10 +296,12 @@ extension PHZoomTransitioning {
       blurView.removeFromSuperview()
       snapshot.removeFromSuperview()
       overlay.removeFromSuperview()
+      dimmingView.removeFromSuperview()
       let isCancelled = context.transitionWasCancelled
       context.completeTransition(!isCancelled)
     }
     
+    // Animate blur visibility
     UIView.springAnimate(
       springDuration: morphDuration,
       bounce: 0.0,
@@ -256,7 +312,7 @@ extension PHZoomTransitioning {
       blurView.effect = blurEffect
     }
     
-    // Morph animation: crossfade to snapshot during blur
+    // Crossfade to snapshot during blur
     UIView.springAnimate(
       springDuration: morphDuration,
       bounce: 0.0,
@@ -272,6 +328,13 @@ extension PHZoomTransitioning {
 // MARK: Helpers
 
 extension PHZoomTransitioning {
+  private func makeDimmingVisualEffectView() -> UIVisualEffectView {
+    let effect = config.dimmingVisualEffect
+    let view = UIVisualEffectView(effect: effect)
+    view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    return view
+  }
+  
   private func prepareViewControllers(from context: UIViewControllerContextTransitioning,
                                       for transition: Transition) {
     if let fromVC = context.viewController(forKey: .from) as? ZoomTransitioning,
