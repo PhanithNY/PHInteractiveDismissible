@@ -28,7 +28,7 @@ final class RootViewController: UIViewController, ZoomTransitioning {
       duration: 0.5,
       maskVisualEffect: nil,
       dimmingColor: UIColor.black.withAlphaComponent(0.25),
-      dimmingVisualEffect: nil,
+      dimmingVisualEffect: UIBlurEffect(style: .systemUltraThinMaterial),
       sourceView: tapBarItem ? sourceView : selectedCell?.iconContainerView
     )
   }
@@ -105,7 +105,8 @@ final class RootViewController: UIViewController, ZoomTransitioning {
     
     let controller = DetailsViewController()
     let navigationController = UINavigationController(rootViewController: controller)
-    delegate = .init(interactionController: nil)
+    let  interactionController = PHZoomInteractivePopInteractionController(viewController: navigationController)
+    delegate = .init(interactionController: interactionController)
     
     if indexPath.item > 0 {
       navigationController.transitioningDelegate = delegate

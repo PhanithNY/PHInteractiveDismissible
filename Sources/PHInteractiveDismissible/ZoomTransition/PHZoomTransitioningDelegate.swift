@@ -10,7 +10,7 @@ import UIKit
 public final class PHZoomTransitioningDelegate: NSObject {
   
   private var interactionController: InteractiveTransitioning?
-  private lazy var transitionAnimator: PHZoomTransitioning = .init()
+  private var transitionAnimator: PHZoomTransitioning = .init()
   
   public init(interactionController: InteractiveTransitioning?) {
     self.interactionController = interactionController
