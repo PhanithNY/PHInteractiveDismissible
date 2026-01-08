@@ -75,6 +75,8 @@ extension DetailsViewController: UITableViewDelegate {
   func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
     tableView.deselectRow(at: indexPath, animated: true)
     
+    let detailViewController: DetailsViewController = .init()
+    navigationController?.pushViewController(detailViewController, animated: true)
   }
 }
 
@@ -104,7 +106,10 @@ extension DetailsViewController {
   private func prepareLayouts() {
     title = "Lists"
     view.backgroundColor = .systemGroupedBackground
-    navigationItem.leftBarButtonItem = .init(image: UIImage(systemName: "chevron.left"), style: .plain, target: self, action: #selector(dismissSelf))
+    
+    if let viewControllers = navigationController?.viewControllers, viewControllers.count == 1 {
+      navigationItem.leftBarButtonItem = .init(image: UIImage(systemName: "chevron.left"), style: .plain, target: self, action: #selector(dismissSelf))
+    }
     
     tableView.layout {
       view.addSubview($0)

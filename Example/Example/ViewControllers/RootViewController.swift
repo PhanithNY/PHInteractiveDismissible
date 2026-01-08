@@ -75,7 +75,8 @@ final class RootViewController: UIViewController, ZoomTransitioning {
   
   @objc
   private func push() {
-    let controller = DetailsViewController()
+//    let controller = DetailsViewController()
+    let controller = NonInteractiveController()
     let navigationController = UINavigationController(rootViewController: controller)
     present(navigationController, dismissalType: .interactive, animated: true)
   }
@@ -87,7 +88,11 @@ final class RootViewController: UIViewController, ZoomTransitioning {
     let navigationController = UINavigationController(rootViewController: controller)
     
     if #available(iOS 26.0, *) {
-      navigationController.preferredTransition = .zoom(sourceBarButtonItemProvider: { context in
+      let option = UIViewController.Transition.ZoomOptions()
+      option.interactiveDismissShouldBegin = { context in
+        navigationController.viewControllers.count == 1
+      }
+      navigationController.preferredTransition = .zoom(options: option, sourceBarButtonItemProvider: { context in
         sender
       })
     } else if #available(iOS 18.0, *) {
@@ -196,4 +201,30 @@ extension RootViewController: UICollectionViewDelegate {
   func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
     zoom(from: indexPath)
   }
+}
+
+final class NonInteractiveController: UIViewController, InteractiveDismissible {
+  
+  var interactiveTransitionManager: (any UIViewControllerTransitioningDelegate)?
+  var dismissibleScrollView: UIScrollView? { nil }
+  
+  override func loadView() {
+    super.loadView()
+    
+    view.backgroundColor = .systemBackground
+    navigationItem.rightBarButtonItem = .init(barButtonSystemItem: .done, target: self, action: #selector(push))
+  }
+  
+  @objc
+  private func push() {
+    let controller = DetailsViewController()
+//    updatePresentation(for: controller)
+    navigationController?.setViewControllers([controller], animated: true)
+    DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(2)) { [self] in
+      if let navigationController {
+        self.updatePresentation(for: navigationController)
+      }
+    }
+  }
+  
 }
