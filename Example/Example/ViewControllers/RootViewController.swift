@@ -74,7 +74,25 @@ final class RootViewController: UIViewController, ZoomTransitioning {
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
     
-    print("View will appear")
+    print(#function)
+  }
+  
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    
+    print(#function)
+  }
+  
+  override func viewWillDisappear(_ animated: Bool) {
+    super.viewWillDisappear(animated)
+    
+    print(#function)
+  }
+  
+  override func viewDidDisappear(_ animated: Bool) {
+    super.viewDidDisappear(animated)
+    
+    print(#function)
   }
   
   // MARK: - Actions
