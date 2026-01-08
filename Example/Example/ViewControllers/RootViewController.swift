@@ -71,6 +71,12 @@ final class RootViewController: UIViewController, ZoomTransitioning {
     prepareLayouts()
   }
   
+  override func viewWillAppear(_ animated: Bool) {
+    super.viewWillAppear(animated)
+    
+    print("View will appear")
+  }
+  
   // MARK: - Actions
   
   @objc

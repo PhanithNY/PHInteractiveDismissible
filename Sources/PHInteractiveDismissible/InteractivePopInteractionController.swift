@@ -100,6 +100,12 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
     if !interactionInProgress {
       interactionInProgress = true
       viewController.dismiss(animated: true)
+      DispatchQueue.main.async { [weak self] in
+        guard let self else { return }
+        if self.transitionContext == nil && self.interactionInProgress {
+          self.resetInteractionState()
+        }
+      }
     }
   }
   
@@ -113,10 +119,18 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   }
   
   private func gestureCancelled(translation: CGFloat, velocity: CGFloat) {
+    if transitionContext == nil {
+      resetInteractionState()
+      return
+    }
     cancel(initialSpringVelocity: springVelocity(distanceToTravel: -translation, gestureVelocity: velocity))
   }
   
   private func gestureEnded(translation: CGFloat, velocity: CGFloat) {
+    if transitionContext == nil {
+      resetInteractionState()
+      return
+    }
     if velocity > 300 || (translation > interactionDistance / 2.0 && velocity > -300) {
       finish(initialSpringVelocity: springVelocity(distanceToTravel: interactionDistance - translation, gestureVelocity: velocity))
     } else {
@@ -252,6 +266,12 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
     viewController.view.subviews.forEach {
       $0.isUserInteractionEnabled = true
     }
+  }
+
+  private func resetInteractionState() {
+    interactionInProgress = false
+    interruptedTranslation = 0
+    enableOtherTouches()
   }
 }
 
