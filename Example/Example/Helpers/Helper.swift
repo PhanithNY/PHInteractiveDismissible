@@ -7,15 +7,20 @@
 
 import PHInteractiveDismissible
 import UIKit
+import ObjectiveC
 
 extension UINavigationController: PHInteractiveDismissible.InteractiveDismissible {
+  private struct AssociatedKeys {
+    static var interactiveTransitionManager: UInt8 = 0
+  }
+
   public var interactiveTransitionManager: UIViewControllerTransitioningDelegate? {
     get {
-      (topViewController as? InteractiveDismissible)?.interactiveTransitionManager
+      objc_getAssociatedObject(self, &AssociatedKeys.interactiveTransitionManager) as? UIViewControllerTransitioningDelegate
     }
     
     set(newValue) {
-      (topViewController as? InteractiveDismissible)?.interactiveTransitionManager = newValue
+      objc_setAssociatedObject(self, &AssociatedKeys.interactiveTransitionManager, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     }
   }
   

@@ -218,13 +218,10 @@ final class NonInteractiveController: UIViewController, InteractiveDismissible {
   @objc
   private func push() {
     let controller = DetailsViewController()
-//    updatePresentation(for: controller)
     navigationController?.setViewControllers([controller], animated: true)
-    DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(2)) { [self] in
-      if let navigationController {
-        self.updatePresentation(for: navigationController)
-      }
-    }
   }
   
+  deinit {
+    print("Deinit \(type(of: self))")
+  }
 }

@@ -2,6 +2,7 @@
 // https://docs.swift.org/swift-book
 
 import UIKit
+import ObjectiveC
 
 public extension UIViewController {
   final func present(_ viewController: InteractiveDismissible,
@@ -30,15 +31,15 @@ public extension UIViewController {
 
 extension UIViewController {
   fileprivate struct Holder {
-    static var _backButtonEnabled = [String: Bool]()
+    static var backButtonEnabled: UInt8 = 0
   }
   
   public var backButtonEnabled: Bool {
     get {
-      Holder._backButtonEnabled[self.debugDescription] ?? false
+      (objc_getAssociatedObject(self, &Holder.backButtonEnabled) as? Bool) ?? false
     }
     set(newValue) {
-      Holder._backButtonEnabled[self.debugDescription] = newValue
+      objc_setAssociatedObject(self, &Holder.backButtonEnabled, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     }
   }
 }

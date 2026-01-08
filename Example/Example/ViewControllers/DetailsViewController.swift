@@ -51,6 +51,10 @@ final class DetailsViewController: UIViewController, InteractiveDismissible, Zoo
     fatalError("init(coder:) has not been implemented")
   }
   
+  deinit {
+    print("Deinit \(type(of: self))")
+  }
+  
   // MARK: - Lifecycle
   
   override func loadView() {

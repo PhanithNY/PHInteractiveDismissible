@@ -25,8 +25,9 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
     self.viewController = viewController
     super.init()
     
-    if let viewController = (viewController as? UINavigationController)?.topViewController {
-      prepareGestureRecognizer(in: viewController.view)
+    if let navigationController = viewController as? UINavigationController {
+      // Keep the gesture attached even if the navigation stack changes.
+      prepareGestureRecognizer(in: navigationController.view)
     } else {
       prepareGestureRecognizer(in: viewController.view)
     }
