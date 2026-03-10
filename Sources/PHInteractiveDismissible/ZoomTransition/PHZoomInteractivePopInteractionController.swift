@@ -20,6 +20,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   private weak var toView: UIView?
   private var config: ZoomOptions?
   private var resultTransform: CGAffineTransform = .identity
+  private var resultScaleFactor: CGFloat = 1.0
   private var initialMaskFrame: CGRect = .zero
   private var finalMaskFrame: CGRect = .zero
   private var initialCornerRadius: CGFloat = 0
@@ -32,6 +33,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   private weak var dimmingView: UIVisualEffectView?
   private weak var blurView: UIVisualEffectView?
   private weak var snapshotView: UIView?
+  private weak var shadowView: UIView?
   private var sourceViewWasHidden: Bool = false
   
   // MARK: - Init
@@ -186,22 +188,38 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
           let fromView,
           let maskView,
           let overlayView,
-          let dimmingView,
-          let blurView,
           let snapshotView else {
       return
     }
-    
+
     transitionContext.updateInteractiveTransition(progress)
+
+    let minimumScale = config?.minimumScale ?? 0.5
+    var transform = clampedTransform(from: .identity, to: resultTransform, progress: progress, minimumScale: minimumScale)
+    transform.ty = translationY
+    transform = clampedTranslation(transform, in: transitionContext.containerView.bounds, for: fromView.bounds)
+    fromView.transform = transform
+
+    if let shadowView {
+      let scale = hypot(transform.a, transform.c)
+      let cornerRadius = max(initialCornerRadius, interpolateValue(from: initialCornerRadius, to: finalCornerRadius, progress: progress))
+      shadowView.transform = transform
+      shadowView.layer.shadowOpacity = Float(progress * 0.35)
+      shadowView.layer.shadowPath = UIBezierPath(
+        roundedRect: CGRect(origin: .zero, size: fromView.bounds.size),
+        cornerRadius: cornerRadius / scale
+      ).cgPath
+    }
     
-    fromView.transform = interpolateTransform(from: .identity, to: resultTransform, progress: progress)
-    maskView.frame = interpolateRect(from: initialMaskFrame, to: finalMaskFrame, progress: progress)
-    maskView.layer.cornerRadius = interpolateValue(from: initialCornerRadius, to: finalCornerRadius, progress: progress)
+    let cornerRadius = max(initialCornerRadius, interpolateValue(from: initialCornerRadius, to: finalCornerRadius, progress: progress))
+    maskView.frame = initialMaskFrame
+    maskView.layer.cornerRadius = cornerRadius
     overlayView.layer.opacity = Float(1.0 - progress)
-    dimmingView.alpha = 1.0 - progress
-    blurView.alpha = progress
-    snapshotView.frame = interpolateRect(from: initialSnapshotFrame, to: finalMaskFrame, progress: progress)
-    snapshotView.layer.cornerRadius = interpolateValue(from: initialSnapshotCornerRadius, to: 0, progress: progress)
+    dimmingView?.alpha = 1.0 - progress
+     blurView?.alpha = progress
+    snapshotView.frame = initialSnapshotFrame
+    snapshotView.layer.cornerRadius = cornerRadius
+    snapshotView.alpha = 0.0
   }
   
   private func cancel(initialSpringVelocity: CGFloat) {
@@ -209,12 +227,10 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
           let fromView,
           let maskView,
           let overlayView,
-          let dimmingView,
-          let blurView,
           let snapshotView else {
       return
     }
-    
+
     UIView.springAnimate(
       springDuration: 0.5,
       bounce: 0.0,
@@ -225,11 +241,13 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
         maskView.frame = self.initialMaskFrame
         maskView.layer.cornerRadius = self.initialCornerRadius
         overlayView.layer.opacity = 1.0
-        dimmingView.alpha = 1.0
-        dimmingView.effect = self.config?.dimmingVisualEffect
-        blurView.alpha = 0.0
+        self.dimmingView?.alpha = 1.0
+        self.dimmingView?.effect = self.config?.dimmingVisualEffect
+        self.blurView?.alpha = 0.0
         snapshotView.frame = self.initialSnapshotFrame
-        snapshotView.layer.cornerRadius = self.initialSnapshotCornerRadius
+        snapshotView.layer.cornerRadius = self.initialCornerRadius
+        self.shadowView?.transform = .identity
+        self.shadowView?.layer.shadowOpacity = 0.0
       } completion: { [weak self] _ in
         transitionContext.cancelInteractiveTransition()
         transitionContext.completeTransition(false)
@@ -244,10 +262,14 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
           let fromView,
           let maskView,
           let overlayView,
-          let dimmingView,
-          let blurView,
           let snapshotView else { return }
+
+    // Match non-interactive dismissal timing for snapshot crossfade (blur morph removed).
+    let morphDuration = (config?.duration ?? 0.5) * 0.25
+    let morphDelay = ((config?.maskVisualEffect == nil) ? (config?.duration ?? 0.5) * 0.3
+                                                       : (config?.duration ?? 0.5) * 0.5)
     
+
     UIView.springAnimate(
       springDuration: 0.5,
       bounce: 0.0,
@@ -256,13 +278,15 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
       options: [.curveEaseInOut]) {
         fromView.transform = self.resultTransform
         maskView.frame = self.finalMaskFrame
-        maskView.layer.cornerRadius = self.finalCornerRadius
+        maskView.layer.cornerRadius = self.finalCornerRadius / self.resultScaleFactor
         overlayView.layer.opacity = 0.0
-        dimmingView.alpha = 0.0
-        dimmingView.effect = nil
+        self.dimmingView?.alpha = 0.0
+        self.dimmingView?.effect = nil
         snapshotView.frame = self.finalMaskFrame
-        snapshotView.layer.cornerRadius = 0
-        blurView.alpha = 1.0
+        snapshotView.layer.cornerRadius = self.finalCornerRadius / self.resultScaleFactor
+        self.blurView?.alpha = 1.0
+        self.shadowView?.transform = self.resultTransform
+        self.shadowView?.layer.shadowOpacity = 0.0
       } completion: { [weak self] _ in
         transitionContext.finishInteractiveTransition()
         transitionContext.completeTransition(true)
@@ -270,6 +294,16 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
         self?.cleanUpTransitionViews()
         self?.resetInteractionState()
       }
+    
+    UIView.springAnimate(
+      springDuration: morphDuration,
+      bounce: 0.0,
+      initialSpringVelocity: 10.0,
+      delay: morphDelay,
+      options: .curveEaseInOut
+    ) {
+      snapshotView.alpha = 1.0
+    }
   }
   
   // MARK: - Helpers
@@ -340,6 +374,13 @@ extension PHZoomInteractivePopInteractionController {
     
     sourceViewWasHidden = sourceView.isHidden
     sourceView.isHidden = false
+    
+//    guard let snapshot = fromView.snapshotView(afterScreenUpdates: false) else {
+//      transitionContext.completeTransition(false)
+//      resetInteractionState()
+//      return
+//    }
+    
     guard let snapshot = sourceView.resizableSnapshotView(from: sourceView.bounds,
                                                           afterScreenUpdates: false,
                                                           withCapInsets: .zero) else {
@@ -356,6 +397,7 @@ extension PHZoomInteractivePopInteractionController {
     } else {
       snapshot.backgroundColor = sourceView.backgroundColor
     }
+    snapshot.layer.cornerRadius = fromView.layer.cornerRadius
     
     let result = CGAffineTransform.transform(
       parent: fromView.frame,
@@ -365,7 +407,7 @@ extension PHZoomInteractivePopInteractionController {
     
     let maskFrame = toFrame.aspectFit(to: fromFrame)
     let initialCornerRadius: CGFloat = config.maskCornerRadius
-    let finalCornerRadius: CGFloat = snapshot.layer.cornerRadius / result.scaleFactor
+    let finalCornerRadius: CGFloat = config.sourceView?.layer.cornerRadius ?? snapshot.layer.cornerRadius
     
     let mask = UIView(frame: fromView.frame).then {
       $0.backgroundColor = .black
@@ -379,29 +421,50 @@ extension PHZoomInteractivePopInteractionController {
       $0.frame = toView.frame
     }
     
-    let dimmingView = makeDimmingVisualEffectView(config: config).then {
-      $0.frame = toView.frame
-      $0.alpha = 1.0
+    let dimmingView: UIVisualEffectView? = config.dimmingVisualEffect.map {
+      UIVisualEffectView(effect: $0).then {
+        $0.frame = toView.frame
+        $0.alpha = 1.0
+        $0.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      }
+    }
+    let blurView: UIVisualEffectView? = config.maskVisualEffect.map {
+      UIVisualEffectView(effect: $0).then {
+        $0.alpha = 0.0
+        $0.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        $0.frame = fromView.bounds
+      }
     }
     
-    let blurView = UIVisualEffectView(effect: config.maskVisualEffect).then {
-      $0.alpha = 0.0
-      $0.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-      $0.frame = fromView.bounds
+    let shadowView = UIView(frame: fromView.frame).then {
+      $0.backgroundColor = .clear
+      $0.layer.shadowColor = UIColor.black.cgColor
+      $0.layer.shadowOpacity = 0.0
+      $0.layer.shadowRadius = 20
+      $0.layer.shadowOffset = .zero
+      $0.layer.shouldRasterize = true
+      $0.layer.rasterizationScale = UIScreen.main.scale
     }
-    
+
     fromView.mask = mask
+    transitionContext.containerView.insertSubview(shadowView, belowSubview: fromView)
     toView.addSubview(overlay)
-    toView.addSubview(dimmingView)
+    if let dimmingView {
+      toView.addSubview(dimmingView)
+    }
+    snapshot.alpha = 0.0
     fromView.addSubview(snapshot)
-    fromView.insertSubview(blurView, belowSubview: snapshot)
-    
+    if let blurView {
+      fromView.insertSubview(blurView, belowSubview: snapshot)
+    }
+
     snapshot.frame = fromFrame
-    
+
     self.fromView = fromView
     self.toView = toView
     self.config = config
     self.resultTransform = result.transform
+    self.resultScaleFactor = result.scaleFactor
     self.initialMaskFrame = fromView.frame
     self.finalMaskFrame = maskFrame
     self.initialCornerRadius = initialCornerRadius
@@ -413,15 +476,9 @@ extension PHZoomInteractivePopInteractionController {
     self.dimmingView = dimmingView
     self.blurView = blurView
     self.snapshotView = snapshot
-    
+    self.shadowView = shadowView
+
     config.sourceView?.isHidden = true
-  }
-  
-  private func makeDimmingVisualEffectView(config: ZoomOptions) -> UIVisualEffectView {
-    let effect = config.dimmingVisualEffect
-    let view = UIVisualEffectView(effect: effect)
-    view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    return view
   }
   
   private func configForPresentedViewController(_ viewController: UIViewController?) -> ZoomOptions? {
@@ -455,11 +512,81 @@ extension PHZoomInteractivePopInteractionController {
     )
   }
   
+  private func scaleFactor(for transform: CGAffineTransform) -> CGFloat {
+    let scaleX = hypot(transform.a, transform.c)
+    let scaleY = hypot(transform.b, transform.d)
+    return max(scaleX, scaleY)
+  }
+  
+  /// Clamps tx/ty so the view stays within the container during an interactive gesture.
+  /// The view's transform is applied from its center, so after the transform:
+  ///   centerX in container = containerCenterX + tx
+  ///   centerY in container = containerCenterY + ty
+  ///   scaledWidth  = viewBounds.width  * scale
+  ///   scaledHeight = viewBounds.height * scale
+  private func clampedTranslation(_ transform: CGAffineTransform, in containerBounds: CGRect, for viewBounds: CGRect) -> CGAffineTransform {
+    let scale = hypot(transform.a, transform.c)
+    let scaledWidth  = viewBounds.width  * scale
+    let scaledHeight = viewBounds.height * scale
+
+    // The view's center in container space after transform
+    let containerCenterX = containerBounds.midX
+    let containerCenterY = containerBounds.midY
+    let centerX = containerCenterX + transform.tx
+    let centerY = containerCenterY + transform.ty
+
+    var tx = transform.tx
+    var ty = transform.ty
+
+    // midX must stay within [containerBounds.minX, containerBounds.maxX]
+    if centerX < containerBounds.minX {
+      tx += containerBounds.minX - centerX
+    } else if centerX > containerBounds.maxX {
+      tx -= centerX - containerBounds.maxX
+    }
+
+    // top edge must stay >= containerBounds.minY + 50
+    let minY = centerY - scaledHeight / 2
+    if minY < containerBounds.minY + 50 {
+      ty += (containerBounds.minY + 50) - minY
+    }
+
+    // bottom edge must stay <= containerBounds.maxY - 50
+    let maxY = centerY + scaledHeight / 2
+    if maxY > containerBounds.maxY - 50 {
+      ty -= maxY - (containerBounds.maxY - 50)
+    }
+
+    return CGAffineTransform(a: transform.a, b: transform.b, c: transform.c, d: transform.d, tx: tx, ty: ty)
+  }
+  
+  private func clampedTransform(from: CGAffineTransform, to: CGAffineTransform, progress: CGFloat, minimumScale: CGFloat) -> CGAffineTransform {
+    let transform = interpolateTransform(from: from, to: to, progress: progress)
+    let scaleX = hypot(transform.a, transform.c)
+    let scaleY = hypot(transform.b, transform.d)
+    let minScale = max(minimumScale, 0.0)
+    if scaleX >= minScale && scaleY >= minScale {
+      return transform
+    }
+    let ratioX = scaleX == 0 ? minScale : minScale / scaleX
+    let ratioY = scaleY == 0 ? minScale : minScale / scaleY
+    let ratio = max(ratioX, ratioY, 1.0)
+    return CGAffineTransform(
+      a: transform.a * ratio,
+      b: transform.b * ratio,
+      c: transform.c * ratio,
+      d: transform.d * ratio,
+      tx: transform.tx * ratio,
+      ty: transform.ty * ratio
+    )
+  }
+  
   private func cleanUpTransitionViews() {
     fromView?.mask = nil
     overlayView?.removeFromSuperview()
     dimmingView?.removeFromSuperview()
     blurView?.removeFromSuperview()
     snapshotView?.removeFromSuperview()
+    shadowView?.removeFromSuperview()
   }
 }

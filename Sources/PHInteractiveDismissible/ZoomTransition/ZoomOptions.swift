@@ -10,6 +10,7 @@ import UIKit
 public struct ZoomOptions {
   var duration: TimeInterval
   var maskCornerRadius: CGFloat
+  var minimumScale: CGFloat
   var sourceView: UIView?
   var maskVisualEffect: UIVisualEffect?
   var dimmingColor: UIColor?
@@ -17,12 +18,14 @@ public struct ZoomOptions {
   
   public init(duration: TimeInterval,
               maskCornerRadius: CGFloat = UIScreen.main.displayCornerRadius,
+              minimumScale: CGFloat = 0.5,
               maskVisualEffect: UIVisualEffect? = nil,
               dimmingColor: UIColor? = UIColor.black.withAlphaComponent(0.25),
               dimmingVisualEffect: UIBlurEffect? = nil,
               sourceView: UIView?) {
     self.duration = duration
     self.maskCornerRadius = maskCornerRadius
+    self.minimumScale = minimumScale
     self.maskVisualEffect = maskVisualEffect
     self.sourceView = sourceView
     self.dimmingColor = dimmingColor
@@ -34,6 +37,7 @@ extension ZoomOptions {
   public static var `default`: ZoomOptions {
     .init(
       duration: 0.5,
+      minimumScale: 0.5,
       maskVisualEffect: nil,
       dimmingColor: UIColor.black.withAlphaComponent(0.25),
       dimmingVisualEffect: nil,

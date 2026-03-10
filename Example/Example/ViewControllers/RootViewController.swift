@@ -25,10 +25,10 @@ final class RootViewController: UIViewController, ZoomTransitioning {
   
   var config: PHInteractiveDismissible.ZoomOptions? {
     return .init(
-      duration: 0.5,
+      duration: 0.4,
       maskVisualEffect: nil,
       dimmingColor: UIColor.black.withAlphaComponent(0.25),
-      dimmingVisualEffect: UIBlurEffect(style: .systemUltraThinMaterial),
+      dimmingVisualEffect: nil,//UIBlurEffect(style: .systemUltraThinMaterial),
       sourceView: tapBarItem ? sourceView : selectedCell?.iconContainerView
     )
   }
