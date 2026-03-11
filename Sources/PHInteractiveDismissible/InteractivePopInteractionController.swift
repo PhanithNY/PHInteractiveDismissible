@@ -41,6 +41,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
     let gesture = OneWayPanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
     gesture.direction = .left
     gesture.edges = gesture.direction.edges
+    gesture.delegate = self
     view.addGestureRecognizer(gesture)
     
     if let preferredCornerRadius = viewController.preferredCornerRadius, preferredCornerRadius > 0.0 {
@@ -279,9 +280,14 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
 
 extension InteractivePopInteractionController: UIGestureRecognizerDelegate {
   public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    if let navigationController = viewController as? UINavigationController {
+      return navigationController.viewControllers.count == 1
+    }
+    
     if let scrollView = viewController.dismissibleScrollView {
       return scrollView.contentOffset.x <= 0
     }
+    
     return true
   }
 }
