@@ -5,24 +5,20 @@ import PackageDescription
 
 let package = Package(
     name: "PHInteractiveDismissible",
-    platforms: [.iOS(.v13)],
+    platforms: [.iOS(.v12)],
     products: [
         // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(
             name: "PHInteractiveDismissible",
             targets: ["PHInteractiveDismissible"]),
     ],
-    dependencies: [
-      .package(url: "https://github.com/jtrivedi/Wave.git", .branchItem("main"))
-    ],
+    dependencies: [],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
             name: "PHInteractiveDismissible",
-            dependencies: [
-              .product(name: "Wave", package: "Wave")
-            ]),
+            dependencies: []),
         .testTarget(
             name: "PHInteractiveDismissibleTests",
             dependencies: ["PHInteractiveDismissible"]),
