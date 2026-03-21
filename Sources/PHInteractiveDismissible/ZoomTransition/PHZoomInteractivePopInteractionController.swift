@@ -222,6 +222,12 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     snapshotView.frame = initialSnapshotFrame
     snapshotView.layer.cornerRadius = cornerRadius
     snapshotView.alpha = 0.0
+    
+    // Removable
+//    let presentedViewController = transitionContext.viewController(forKey: .from).unsafelyUnwrapped
+//    if let modalPresentationController = presentedViewController.presentationController as? PHZoomPresentationController {
+//      modalPresentationController.fadeView.alpha = (1.0 - progress)/2
+//    }
   }
   
   private func cancel(initialSpringVelocity: CGFloat) {
@@ -289,6 +295,8 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
         self.blurView?.alpha = 1.0
         self.shadowView?.transform = self.resultTransform
         self.shadowView?.layer.shadowOpacity = 0.0
+        
+        snapshotView.alpha = 1.0
       } completion: { [weak self] _ in
         transitionContext.finishInteractiveTransition()
         transitionContext.completeTransition(true)
@@ -297,15 +305,15 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
         self?.resetInteractionState()
       }
     
-    UIView.springAnimate(
-      springDuration: morphDuration,
-      bounce: 0.0,
-      initialSpringVelocity: 10.0,
-      delay: morphDelay,
-      options: .curveEaseInOut
-    ) {
-      snapshotView.alpha = 1.0
-    }
+//    UIView.springAnimate(
+//      springDuration: morphDuration,
+//      bounce: 0.0,
+//      initialSpringVelocity: 10.0,
+//      delay: morphDelay,
+//      options: .curveEaseInOut
+//    ) {
+//      snapshotView.alpha = 1.0
+//    }
   }
   
   // MARK: - Helpers
@@ -374,33 +382,6 @@ extension PHZoomInteractivePopInteractionController {
       return
     }
     
-    sourceViewWasHidden = sourceView.isHidden
-    sourceView.isHidden = false
-    
-//    guard let snapshot = fromView.snapshotView(afterScreenUpdates: false) else {
-//      transitionContext.completeTransition(false)
-//      resetInteractionState()
-//      return
-//    }
-    
-    guard let snapshot = sourceView.resizableSnapshotView(from: sourceView.bounds,
-                                                          afterScreenUpdates: false,
-                                                          withCapInsets: .zero) else {
-      sourceView.isHidden = sourceViewWasHidden
-      transitionContext.completeTransition(false)
-      resetInteractionState()
-      return
-    }
-    sourceView.isHidden = sourceViewWasHidden
-    
-    snapshot.layer.cornerRadius = sourceView.layer.cornerRadius
-    if let superviewBackgroundColor = snapshot.superview?.backgroundColor {
-      snapshot.backgroundColor = sourceView.backgroundColor?.opaqueColor(over: superviewBackgroundColor)
-    } else {
-      snapshot.backgroundColor = sourceView.backgroundColor
-    }
-    snapshot.layer.cornerRadius = fromView.layer.cornerRadius
-    
     let result = CGAffineTransform.transform(
       parent: fromView.frame,
       soChild: fromFrame,
@@ -409,7 +390,6 @@ extension PHZoomInteractivePopInteractionController {
     
     let maskFrame = toFrame.aspectFit(to: fromFrame)
     let initialCornerRadius: CGFloat = config.maskCornerRadius
-    let finalCornerRadius: CGFloat = config.sourceView?.layer.cornerRadius ?? snapshot.layer.cornerRadius
     
     let mask = UIView(frame: fromView.frame).then {
       $0.backgroundColor = .black
@@ -454,13 +434,35 @@ extension PHZoomInteractivePopInteractionController {
     if let dimmingView {
       toView.addSubview(dimmingView)
     }
-    snapshot.alpha = 0.0
+    
+    sourceViewWasHidden = sourceView.isHidden
+    sourceView.isHidden = false
+    sourceView.layoutIfNeeded()
+    
+    guard let snapshot = sourceView.snapshotView(afterScreenUpdates: true) else {
+      sourceView.isHidden = sourceViewWasHidden
+      transitionContext.completeTransition(false)
+      resetInteractionState()
+      return
+    }
+    sourceView.isHidden = sourceViewWasHidden
+    
+    snapshot.layer.cornerRadius = sourceView.layer.cornerRadius
+    if let superviewBackgroundColor = snapshot.superview?.backgroundColor {
+      snapshot.backgroundColor = sourceView.backgroundColor?.opaqueColor(over: superviewBackgroundColor)
+    } else {
+      snapshot.backgroundColor = sourceView.backgroundColor
+    }
+    
     fromView.addSubview(snapshot)
+    snapshot.frame = fromFrame
+    snapshot.alpha = 0.0
+    
     if let blurView {
       fromView.insertSubview(blurView, belowSubview: snapshot)
     }
-
-    snapshot.frame = fromFrame
+    
+    let finalCornerRadius: CGFloat = config.sourceView?.layer.cornerRadius ?? snapshot.layer.cornerRadius
 
     self.fromView = fromView
     self.toView = toView

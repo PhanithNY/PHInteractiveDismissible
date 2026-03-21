@@ -36,7 +36,7 @@ public final class PHZoomPresentationController: UIPresentationController {
   
   public override func presentationTransitionWillBegin() {
     guard let containerView = containerView else { return }
-    containerView.insertSubview(fadeView, at: 0)
+//    containerView.insertSubview(fadeView, at: 0)
     fadeView.frame = containerView.bounds
     
     guard let coordinator = presentedViewController.transitionCoordinator else {
