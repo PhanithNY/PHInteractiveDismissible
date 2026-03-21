@@ -196,9 +196,12 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     transitionContext.updateInteractiveTransition(progress)
 
     let minimumScale = config?.minimumScale ?? 0.5
-    var transform = interactiveTransform(progress: progress,
-                                         translationX: translation,
-                                         translationY: translationY,
+    let weightedTranslationX = weightedTranslation(translation, progress: progress)
+    let weightedTranslationY = weightedVerticalTranslation(translationY)
+    let weightedProgress = weightedScaleProgress(progress)
+    var transform = interactiveTransform(progress: weightedProgress,
+                                         translationX: weightedTranslationX,
+                                         translationY: weightedTranslationY,
                                          minimumScale: minimumScale)
     transform = clampedTranslation(transform, in: transitionContext.containerView.bounds, for: fromView.bounds)
     fromView.transform = transform
@@ -616,6 +619,24 @@ extension PHZoomInteractivePopInteractionController {
                              d: scaledTransform.d,
                              tx: translationX,
                              ty: translationY)
+  }
+  
+  /// Adds increasing resistance as the dismissal progresses so the drag feels heavier.
+  private func weightedTranslation(_ translation: CGFloat, progress: CGFloat) -> CGFloat {
+    let clampedProgress = max(0.0, min(1.0, progress))
+    let resistance = max(0.38, 0.74 - (clampedProgress * 0.24))
+    return translation * resistance
+  }
+  
+  /// Vertical motion should feel slightly damped so the card keeps some mass.
+  private func weightedVerticalTranslation(_ translation: CGFloat) -> CGFloat {
+    translation * 0.65
+  }
+  
+  /// Let scaling lag behind the raw gesture progress a bit to avoid a weightless feel.
+  private func weightedScaleProgress(_ progress: CGFloat) -> CGFloat {
+    let clampedProgress = max(0.0, min(1.0, progress))
+    return pow(clampedProgress, 1.28)
   }
   
   private func cleanUpTransitionViews() {
