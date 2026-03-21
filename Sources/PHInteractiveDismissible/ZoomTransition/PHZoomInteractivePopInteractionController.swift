@@ -195,8 +195,10 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     transitionContext.updateInteractiveTransition(progress)
 
     let minimumScale = config?.minimumScale ?? 0.5
-    var transform = clampedTransform(from: .identity, to: resultTransform, progress: progress, minimumScale: minimumScale)
-    transform.ty = translationY
+    var transform = interactiveTransform(progress: progress,
+                                         translationX: translation,
+                                         translationY: translationY,
+                                         minimumScale: minimumScale)
     transform = clampedTranslation(transform, in: transitionContext.containerView.bounds, for: fromView.bounds)
     fromView.transform = transform
 
@@ -579,6 +581,25 @@ extension PHZoomInteractivePopInteractionController {
       tx: transform.tx * ratio,
       ty: transform.ty * ratio
     )
+  }
+
+  /// Uses gesture translation for motion while keeping progress-driven scale interpolation.
+  /// The final dismissal transform can translate left, center, or right depending on the
+  /// source view location, but during interaction the content should follow the user's pan.
+  private func interactiveTransform(progress: CGFloat,
+                                    translationX: CGFloat,
+                                    translationY: CGFloat,
+                                    minimumScale: CGFloat) -> CGAffineTransform {
+    let scaledTransform = clampedTransform(from: .identity,
+                                           to: resultTransform,
+                                           progress: progress,
+                                           minimumScale: minimumScale)
+    return CGAffineTransform(a: scaledTransform.a,
+                             b: scaledTransform.b,
+                             c: scaledTransform.c,
+                             d: scaledTransform.d,
+                             tx: translationX,
+                             ty: translationY)
   }
   
   private func cleanUpTransitionViews() {
