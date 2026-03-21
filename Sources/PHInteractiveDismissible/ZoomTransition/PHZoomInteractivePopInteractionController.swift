@@ -154,10 +154,16 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
       resetInteractionState()
       return
     }
-    if velocity > 300 || (translation > interactionDistance / 2.0 && velocity > -300) {
-      finish(initialSpringVelocity: springVelocity(distanceToTravel: interactionDistance - translation, gestureVelocity: velocity))
+
+    let shouldFinish = velocity > 300 || (translation > interactionDistance / 2.0 && velocity > -300)
+    let currentTranslationX = fromView?.transform.tx ?? 0.0
+    let distanceToTravel = shouldFinish ? (resultTransform.tx - currentTranslationX) : -currentTranslationX
+    let initialVelocity = springVelocity(distanceToTravel: distanceToTravel, gestureVelocity: velocity)
+
+    if shouldFinish {
+      finish(initialSpringVelocity: initialVelocity)
     } else {
-      cancel(initialSpringVelocity: springVelocity(distanceToTravel: -translation, gestureVelocity: velocity))
+      cancel(initialSpringVelocity: initialVelocity)
     }
   }
   
@@ -281,15 +287,16 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
           let snapshotView else { return }
 
     // Match non-interactive dismissal timing for snapshot crossfade (blur morph removed).
-    let morphDuration = (config?.duration ?? 0.5) * 0.25
-    let morphDelay = ((config?.maskVisualEffect == nil) ? (config?.duration ?? 0.5) * 0.3
-                                                       : (config?.duration ?? 0.5) * 0.5)
+    let finishDuration = max((config?.duration ?? 0.5) * 1.32, 0.56)
+    let morphDuration = finishDuration * 0.24
+    let morphDelay = ((config?.maskVisualEffect == nil) ? finishDuration * 0.28
+                                                       : finishDuration * 0.5)
     
 
     UIView.springAnimate(
-      springDuration: 0.5,
-      bounce: 0.0,
-      initialSpringVelocity: 10.0,
+      springDuration: finishDuration,
+      bounce: 0.2,
+      initialSpringVelocity: initialSpringVelocity * 0.8,
       delay: 0.0,
       options: [.curveEaseInOut]) {
         fromView.transform = self.resultTransform
@@ -317,6 +324,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
         self?.resetInteractionState()
       }
     
+    
 //    UIView.springAnimate(
 //      springDuration: morphDuration,
 //      bounce: 0.0,
@@ -330,8 +338,12 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   
   // MARK: - Helpers
   
+  /// Normalizes gesture velocity for UIKit spring APIs.
+  /// Keep the value conservative so the spring settles with visible weight instead of snapping.
   private func springVelocity(distanceToTravel: CGFloat, gestureVelocity: CGFloat) -> CGFloat {
-    distanceToTravel == 0 ? 0 : gestureVelocity / distanceToTravel
+    let normalizedDistance = max(abs(distanceToTravel), 28.0)
+    let normalizedVelocity = gestureVelocity / normalizedDistance
+    return max(-8.0, min(8.0, normalizedVelocity))
   }
   
   private func disableOtherTouches() {
