@@ -35,6 +35,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   private weak var snapshotView: UIView?
   private weak var shadowView: UIView?
   private var sourceViewWasHidden: Bool = false
+  private var shadowFinalFrame: CGRect = .zero
   
   // MARK: - Init
   
@@ -203,13 +204,13 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     fromView.transform = transform
 
     if let shadowView {
-      let scale = hypot(transform.a, transform.c)
+//      let scale = hypot(transform.a, transform.c)
       let cornerRadius = max(initialCornerRadius, interpolateValue(from: initialCornerRadius, to: finalCornerRadius, progress: progress))
       shadowView.transform = transform
-      shadowView.layer.shadowOpacity = Float(progress * 0.35)
+      shadowView.layer.shadowOpacity = Float(progress * 0.85)
       shadowView.layer.shadowPath = UIBezierPath(
-        roundedRect: CGRect(origin: .zero, size: fromView.bounds.size),
-        cornerRadius: cornerRadius / scale
+        roundedRect: fromView.bounds,//CGRect(origin: .zero, size: fromView.bounds.size),
+        cornerRadius: cornerRadius // scale
       ).cgPath
     }
     
@@ -256,6 +257,10 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
         snapshotView.layer.cornerRadius = self.initialCornerRadius
         self.shadowView?.transform = .identity
         self.shadowView?.layer.shadowOpacity = 0.0
+        self.shadowView?.layer.shadowPath = UIBezierPath(
+          roundedRect: CGRect(origin: .zero, size: fromView.bounds.size),
+          cornerRadius: self.initialCornerRadius
+        ).cgPath
       } completion: { [weak self] _ in
         transitionContext.cancelInteractiveTransition()
         transitionContext.completeTransition(false)
@@ -295,6 +300,10 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
         self.blurView?.alpha = 1.0
         self.shadowView?.transform = self.resultTransform
         self.shadowView?.layer.shadowOpacity = 0.0
+        self.shadowView?.layer.shadowPath = UIBezierPath(
+          roundedRect: self.shadowFinalFrame,
+          cornerRadius: self.finalCornerRadius / self.resultScaleFactor
+        ).cgPath
         
         snapshotView.alpha = 1.0
       } completion: { [weak self] _ in
@@ -422,10 +431,14 @@ extension PHZoomInteractivePopInteractionController {
       $0.backgroundColor = .clear
       $0.layer.shadowColor = UIColor.black.cgColor
       $0.layer.shadowOpacity = 0.0
-      $0.layer.shadowRadius = 20
+      $0.layer.shadowRadius = 16
       $0.layer.shadowOffset = .zero
       $0.layer.shouldRasterize = true
       $0.layer.rasterizationScale = UIScreen.main.scale
+      $0.layer.shadowPath = UIBezierPath(
+        roundedRect: CGRect(origin: .zero, size: fromView.bounds.size),
+        cornerRadius: initialCornerRadius
+      ).cgPath
     }
 
     fromView.mask = mask
@@ -481,6 +494,7 @@ extension PHZoomInteractivePopInteractionController {
     self.blurView = blurView
     self.snapshotView = snapshot
     self.shadowView = shadowView
+    self.shadowFinalFrame = maskFrame
 
     config.sourceView?.isHidden = true
   }
