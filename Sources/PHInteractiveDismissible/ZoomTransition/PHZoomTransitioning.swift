@@ -55,18 +55,14 @@ extension PHZoomTransitioning {
     
     // Create and cache snapshot of the source view
     guard let sourceView = config.sourceView else {
+      context.completeTransition(false)
       return
     }
     
-    let sourceViewWasHidden = sourceView.isHidden
-    sourceView.isHidden = false
-    sourceView.layoutIfNeeded()
-    
-    guard let snapshot = sourceView.snapshotView(afterScreenUpdates: true) else {
-      sourceView.isHidden = sourceViewWasHidden
+    guard let snapshot = makeSnapshot(from: sourceView) else {
+      context.completeTransition(false)
       return
     }
-    sourceView.isHidden = sourceViewWasHidden
     
     // Clone all available properties to new snapshot
     // Currently only background color and cornerRadius
@@ -223,8 +219,19 @@ extension PHZoomTransitioning {
     let toView = options.toView
     let toFrame = options.toRect
     
-    // Use the cached snapshot from presentation
-    let snapshot = sourceView.unsafelyUnwrapped.then {
+    let baseSnapshot: UIView
+    if let sourceView {
+      baseSnapshot = sourceView
+    } else if let sourceView = config.sourceView,
+              let snapshot = makeSnapshot(from: sourceView) {
+      baseSnapshot = snapshot
+      self.sourceView = snapshot
+    } else {
+      context.completeTransition(false)
+      return
+    }
+    
+    let snapshot = baseSnapshot.then {
       $0.alpha = 0.0
       $0.frame = fromFrame
     }
@@ -337,6 +344,15 @@ extension PHZoomTransitioning {
 // MARK: Helpers
 
 extension PHZoomTransitioning {
+  private func makeSnapshot(from sourceView: UIView) -> UIView? {
+    let sourceViewWasHidden = sourceView.isHidden
+    sourceView.isHidden = false
+    sourceView.layoutIfNeeded()
+    let snapshot = sourceView.snapshotView(afterScreenUpdates: true)
+    sourceView.isHidden = sourceViewWasHidden
+    return snapshot
+  }
+  
   private func makeDimmingVisualEffectView() -> UIVisualEffectView {
     let effect = config.dimmingVisualEffect
     let view = UIVisualEffectView(effect: effect)
