@@ -54,10 +54,19 @@ extension PHZoomTransitioning {
   private func animationForPresentation(from context: UIViewControllerContextTransitioning) {
     
     // Create and cache snapshot of the source view
-    guard let sourceView = config.sourceView,
-          let snapshot = sourceView.resizableSnapshotView(from: sourceView.bounds, afterScreenUpdates: false, withCapInsets: .zero) else {
+    guard let sourceView = config.sourceView else {
       return
     }
+    
+    let sourceViewWasHidden = sourceView.isHidden
+    sourceView.isHidden = false
+    sourceView.layoutIfNeeded()
+    
+    guard let snapshot = sourceView.snapshotView(afterScreenUpdates: true) else {
+      sourceView.isHidden = sourceViewWasHidden
+      return
+    }
+    sourceView.isHidden = sourceViewWasHidden
     
     // Clone all available properties to new snapshot
     // Currently only background color and cornerRadius
