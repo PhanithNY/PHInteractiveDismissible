@@ -366,14 +366,17 @@ extension PHZoomTransitioning {
   
   private func prepareViewControllers(from context: UIViewControllerContextTransitioning,
                                       for transition: Transition) {
-    if let fromVC = context.viewController(forKey: .from)?.resolvedZoomTransitioning() {
-      if let customConfig = fromVC.config {
-        config = customConfig
-      }
-      fromVC.prepare(for: transition)
-    }
-    
+    let fromVC = context.viewController(forKey: .from)?.resolvedZoomTransitioning()
     let toVC = context.viewController(forKey: .to)?.resolvedZoomTransitioning()
+
+    switch transition {
+    case .present:
+      config = toVC?.config ?? fromVC?.config ?? .default
+    case .dismiss:
+      config = fromVC?.config ?? toVC?.config ?? .default
+    }
+
+    fromVC?.prepare(for: transition)
     toVC?.prepare(for: transition)
   }
   
