@@ -17,6 +17,15 @@ final class DetailsViewController: UIViewController, InteractiveDismissible, Zoo
     44
   }
   
+  var config: PHInteractiveDismissible.ZoomOptions? {
+    return .init(
+      duration: 0.4,
+      maskVisualEffect: UIBlurEffect(style: .systemThickMaterial),
+      dimmingColor: UIColor.black.withAlphaComponent(0.25),
+      dimmingVisualEffect: nil//UIBlurEffect(style: .systemUltraThinMaterial)
+    )
+  }
+  
   // MARK: - Properties
   
   private var items: [GridItem] = [

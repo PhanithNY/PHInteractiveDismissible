@@ -32,7 +32,12 @@ public extension ZoomTransitioning {
 
 public extension ZoomTransitioning where Self: UIViewController {
   var config: ZoomOptions? {
-    nil
+    return .init(
+      duration: 0.4,
+      maskVisualEffect: nil,
+      dimmingColor: nil,
+      dimmingVisualEffect: nil
+    )
   }
   
   var sharedFrame: CGRect {

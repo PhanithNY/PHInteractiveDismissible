@@ -23,15 +23,6 @@ final class RootViewController: UIViewController, ZoomTransitioning {
     return selectedCell!.iconContainerView.convert(selectedCell!.iconContainerView.bounds, to: nil)
   }
   
-  var config: PHInteractiveDismissible.ZoomOptions? {
-    return .init(
-      duration: 0.4,
-      maskVisualEffect: UIBlurEffect(style: .systemThickMaterial),
-      dimmingColor: UIColor.black.withAlphaComponent(0.25),
-      dimmingVisualEffect: nil//UIBlurEffect(style: .systemUltraThinMaterial)
-    )
-  }
-  
   func sourceView(for transition: PHInteractiveDismissible.PHZoomTransitioning.Transition) -> UIView? {
     tapBarItem ? sourceView : selectedCell?.iconContainerView
   }
