@@ -228,8 +228,8 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     maskView.frame = initialMaskFrame
     maskView.layer.cornerRadius = cornerRadius
     overlayView.layer.opacity = Float(1.0 - progress)
-    dimmingView?.alpha = 1.0 - progress
-     blurView?.alpha = progress
+    dimmingView?.alpha = dimmingView == nil ? (1.0 - progress) : 1.0 //1.0 - progress
+    blurView?.alpha = 0.0//progress
     snapshotView.frame = initialSnapshotFrame
     snapshotView.layer.cornerRadius = cornerRadius
     snapshotView.alpha = 0.0
@@ -251,7 +251,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     }
 
     UIView.springAnimate(
-      springDuration: 0.5,
+      springDuration: config?.duration ?? 0.35,
       bounce: 0.0,
       initialSpringVelocity: 10.0,
       delay: 0.0,
@@ -288,7 +288,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
           let snapshotView else { return }
 
     // Match non-interactive dismissal timing for snapshot crossfade (blur morph removed).
-    let finishDuration = max((config?.duration ?? 0.5) * 1.32, 0.56)
+    let finishDuration = max((config?.duration ?? 0.35) * 1.32, 0.5)
     let morphDuration = finishDuration * 0.24
     let morphDelay = ((config?.maskVisualEffect == nil) ? finishDuration * 0.28
                                                        : finishDuration * 0.5)
@@ -636,19 +636,19 @@ extension PHZoomInteractivePopInteractionController {
   /// Adds increasing resistance as the dismissal progresses so the drag feels heavier.
   private func weightedTranslation(_ translation: CGFloat, progress: CGFloat) -> CGFloat {
     let clampedProgress = max(0.0, min(1.0, progress))
-    let resistance = max(0.38, 0.74 - (clampedProgress * 0.24))
+    let resistance = max(0.4, 0.72 - (clampedProgress * 0.22))
     return translation * resistance
   }
   
   /// Vertical motion should feel slightly damped so the card keeps some mass.
   private func weightedVerticalTranslation(_ translation: CGFloat) -> CGFloat {
-    translation * 0.65
+    translation * 0.48
   }
   
   /// Let scaling lag behind the raw gesture progress a bit to avoid a weightless feel.
   private func weightedScaleProgress(_ progress: CGFloat) -> CGFloat {
     let clampedProgress = max(0.0, min(1.0, progress))
-    return pow(clampedProgress, 1.28)
+    return pow(clampedProgress, 1.52)
   }
   
   private func cleanUpTransitionViews() {

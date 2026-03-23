@@ -31,7 +31,7 @@ final class GridCell: UICollectionViewCell {
   // MARK: - Properties
   
   private(set) lazy var iconContainerView = UIView().config {
-    $0.backgroundColor = .systemGroupedBackground
+    $0.backgroundColor = UIColor(red: .random(in: 0...1), green: .random(in: 0...1), blue: .random(in: 0...1), alpha: 1.0)//.systemGroupedBackground
   }
   
   private lazy var iconView = UIImageView().config {

@@ -26,9 +26,9 @@ final class RootViewController: UIViewController, ZoomTransitioning {
   var config: PHInteractiveDismissible.ZoomOptions? {
     return .init(
       duration: 0.4,
-      maskVisualEffect: nil,
+      maskVisualEffect: UIBlurEffect(style: .systemThickMaterial),
       dimmingColor: UIColor.black.withAlphaComponent(0.25),
-      dimmingVisualEffect: UIBlurEffect(style: .systemUltraThinMaterial)
+      dimmingVisualEffect: nil//UIBlurEffect(style: .systemUltraThinMaterial)
     )
   }
   
