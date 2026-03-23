@@ -8,6 +8,10 @@
 import UIKit
 
 public final class PHZoomInteractivePopInteractionController: NSObject, InteractiveTransitioning {
+  private enum InteractionDriver {
+    case edgePan
+    case pinch
+  }
   
   public var interactionInProgress = false
   private weak var viewController: (InteractiveDismissible & ZoomTransitioning)!
@@ -37,6 +41,10 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   private weak var sourceView: UIView?
   private var sourceViewWasHidden: Bool = false
   private var shadowFinalFrame: CGRect = .zero
+  private var interactionDriver: InteractionDriver?
+  private var initialPinchLocation: CGPoint?
+  private var pinchRotationAngle: CGFloat = 0.0
+  private let pinchRotationMultiplier: CGFloat = 1.35
   
   // MARK: - Init
   
@@ -60,6 +68,10 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     gesture.edges = .left
     gesture.delegate = self
     view.addGestureRecognizer(gesture)
+
+    let pinchGesture = UIPinchGestureRecognizer(target: self, action: #selector(handlePinchGesture(_:)))
+    pinchGesture.delegate = self
+    view.addGestureRecognizer(pinchGesture)
     
     if let navigationController = viewController as? UINavigationController,
        let popGesture = navigationController.interactivePopGestureRecognizer {
@@ -96,19 +108,15 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     
     switch gestureRecognizer.state {
     case .began:
-      print("PHZoomInteractivePopInteractionController gesture began")
-      gestureBegan()
+      gestureBegan(driver: .edgePan)
       
     case .changed:
-      print("PHZoomInteractivePopInteractionController gesture changed")
       gestureChanged(translation: translation + interruptedTranslation, velocity: velocity, translationY: translationY)
       
     case .cancelled:
-      print("PHZoomInteractivePopInteractionController gesture cancelled")
       gestureCancelled(translation: translation + interruptedTranslation, velocity: velocity)
       
     case .ended:
-      print("PHZoomInteractivePopInteractionController gesture ended")
       gestureEnded(translation: translation + interruptedTranslation, velocity: velocity)
       
     default:
@@ -116,10 +124,54 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     }
   }
   
-  private func gestureBegan() {
+  @objc
+  private func handlePinchGesture(_ gestureRecognizer: UIPinchGestureRecognizer) {
+    guard let superview = gestureRecognizer.view?.superview else {
+      return
+    }
+
+    let location = gestureRecognizer.location(in: superview)
+    let progress = max(0.0, min(1.0, (1.0 - gestureRecognizer.scale) / 0.62))
+    let translationY = weightedPinchVerticalTranslation((location.y - superview.bounds.midY) * progress * 0.18)
+    let pinchScale = resistedPinchScale(for: gestureRecognizer.scale)
+
+    switch gestureRecognizer.state {
+    case .began:
+      guard gestureRecognizer.velocity < 0 else { return }
+      initialPinchLocation = location
+      pinchRotationAngle = 0.0
+      gestureBegan(driver: .pinch)
+
+    case .changed:
+      guard interactionDriver == .pinch else { return }
+      let rotationAngle = updatePinchRotationAngle(location: location,
+                                                   progress: progress,
+                                                   containerWidth: superview.bounds.width)
+      pinchChanged(progress: weightedPinchProgress(progress),
+                   translationY: translationY,
+                   rotationAngle: rotationAngle,
+                   pinchScale: pinchScale)
+
+    case .cancelled:
+      guard interactionDriver == .pinch else { return }
+      initialPinchLocation = nil
+      pinchCancelled(scale: gestureRecognizer.scale, velocity: gestureRecognizer.velocity)
+
+    case .ended:
+      guard interactionDriver == .pinch else { return }
+      initialPinchLocation = nil
+      pinchEnded(progress: progress, velocity: gestureRecognizer.velocity)
+
+    default:
+      break
+    }
+  }
+  
+  private func gestureBegan(driver: InteractionDriver) {
     disableOtherTouches()
     
     interruptedTranslation = 0
+    interactionDriver = driver
     
     if !interactionInProgress {
       interactionInProgress = true
@@ -139,7 +191,11 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     }
     var progress = interactionDistance == 0 ? 0 : (translation / interactionDistance)
     progress = max(0, min(1, progress))
-    update(progress: progress, translation: translation, translationY: translationY)
+    update(progress: progress,
+           translation: translation,
+           translationY: translationY,
+           rotationAngle: 0.0,
+           additionalScale: 1.0)
   }
   
   private func gestureCancelled(translation: CGFloat, velocity: CGFloat) {
@@ -160,6 +216,44 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     let currentTranslationX = fromView?.transform.tx ?? 0.0
     let distanceToTravel = shouldFinish ? (resultTransform.tx - currentTranslationX) : -currentTranslationX
     let initialVelocity = springVelocity(distanceToTravel: distanceToTravel, gestureVelocity: velocity)
+
+    if shouldFinish {
+      finish(initialSpringVelocity: initialVelocity)
+    } else {
+      cancel(initialSpringVelocity: initialVelocity)
+    }
+  }
+
+  private func pinchChanged(progress: CGFloat, translationY: CGFloat, rotationAngle: CGFloat, pinchScale: CGFloat) {
+    guard transitionContext != nil else {
+      return
+    }
+    update(progress: progress,
+           translation: 0.0,
+           translationY: translationY,
+           rotationAngle: rotationAngle,
+           additionalScale: pinchScale)
+  }
+
+  private func pinchCancelled(scale: CGFloat, velocity: CGFloat) {
+    guard transitionContext != nil else {
+      resetInteractionState()
+      return
+    }
+    let distanceToTravel = max(0.0, 1.0 - scale)
+    cancel(initialSpringVelocity: springVelocity(distanceToTravel: -distanceToTravel, gestureVelocity: velocity * 180.0))
+  }
+
+  private func pinchEnded(progress: CGFloat, velocity: CGFloat) {
+    guard transitionContext != nil else {
+      resetInteractionState()
+      return
+    }
+
+    let shouldFinish = velocity < -0.75 || (progress > 0.32 && velocity < 0.8)
+    let currentTranslationX = fromView?.transform.tx ?? 0.0
+    let distanceToTravel = shouldFinish ? (resultTransform.tx - currentTranslationX) : -currentTranslationX
+    let initialVelocity = springVelocity(distanceToTravel: distanceToTravel, gestureVelocity: (-velocity) * 220.0)
 
     if shouldFinish {
       finish(initialSpringVelocity: initialVelocity)
@@ -191,7 +285,11 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     prepareLayouts()
   }
   
-  private func update(progress: CGFloat, translation: CGFloat, translationY: CGFloat) {
+  private func update(progress: CGFloat,
+                      translation: CGFloat,
+                      translationY: CGFloat,
+                      rotationAngle: CGFloat,
+                      additionalScale: CGFloat) {
     guard let transitionContext,
           let fromView,
           let maskView,
@@ -211,6 +309,8 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
                                          translationY: weightedTranslationY,
                                          minimumScale: minimumScale)
     transform = clampedTranslation(transform, in: transitionContext.containerView.bounds, for: fromView.bounds)
+    transform = transform.scaledBy(x: additionalScale, y: additionalScale)
+    transform = transform.rotated(by: rotationAngle)
     fromView.transform = transform
 
     if let shadowView {
@@ -362,6 +462,9 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   private func resetInteractionState() {
     interactionInProgress = false
     interruptedTranslation = 0
+    interactionDriver = nil
+    initialPinchLocation = nil
+    pinchRotationAngle = 0.0
     enableOtherTouches()
   }
 }
@@ -370,6 +473,9 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
 
 extension PHZoomInteractivePopInteractionController: UIGestureRecognizerDelegate {
   public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    if gestureRecognizer is UIPinchGestureRecognizer {
+      return !interactionInProgress
+    }
     if let scrollView = viewController.dismissibleScrollView {
       return scrollView.contentOffset.x <= 0
     }
@@ -649,6 +755,41 @@ extension PHZoomInteractivePopInteractionController {
   private func weightedScaleProgress(_ progress: CGFloat) -> CGFloat {
     let clampedProgress = max(0.0, min(1.0, progress))
     return pow(clampedProgress, 1.52)
+  }
+
+  private func weightedPinchRotationProgress(_ progress: CGFloat) -> CGFloat {
+    let clampedProgress = max(0.0, min(1.0, progress))
+    return pow(clampedProgress, 1.18)
+  }
+
+  private func weightedPinchProgress(_ progress: CGFloat) -> CGFloat {
+    let clampedProgress = max(0.0, min(1.0, progress))
+    return pow(clampedProgress, 2.08)
+  }
+
+  private func weightedPinchVerticalTranslation(_ translation: CGFloat) -> CGFloat {
+    translation * 0.24
+  }
+
+  private func updatePinchRotationAngle(location: CGPoint, progress: CGFloat, containerWidth: CGFloat) -> CGFloat {
+    guard let initialPinchLocation else {
+      return pinchRotationAngle
+    }
+
+    let deltaX = location.x - initialPinchLocation.x
+    let normalizedDeltaX = deltaX / max(containerWidth / 2.0, 1.0)
+    let rotationProgress = max(0.22, weightedPinchRotationProgress(progress))
+    let incrementalRotation = -normalizedDeltaX * (.pi / 5.5) * rotationProgress * pinchRotationMultiplier
+    let maxRotation = (.pi / 6.8)
+    pinchRotationAngle = max(-maxRotation, min(maxRotation, incrementalRotation))
+    return pinchRotationAngle
+  }
+
+  private func resistedPinchScale(for scale: CGFloat) -> CGFloat {
+    let clampedScale = max(0.62, min(1.0, scale))
+    let normalized = (1.0 - clampedScale) / 0.38
+    let resistedProgress = pow(max(0.0, min(1.0, normalized)), 2.35)
+    return 1.0 - (resistedProgress * 0.38)
   }
   
   private func cleanUpTransitionViews() {
