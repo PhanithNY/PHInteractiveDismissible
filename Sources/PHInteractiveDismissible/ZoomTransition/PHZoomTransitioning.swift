@@ -54,7 +54,8 @@ extension PHZoomTransitioning {
   private func animationForPresentation(from context: UIViewControllerContextTransitioning) {
     
     // Create and cache snapshot of the source view
-    guard let sourceView = config.sourceView else {
+    guard let sourceView = context.sourceView(forKey: .from, transition: transition)
+      ?? context.sourceView(forKey: .to, transition: transition) else {
       context.completeTransition(false)
       return
     }
@@ -158,7 +159,7 @@ extension PHZoomTransitioning {
     let springDuration: TimeInterval = config.duration * 0.75
     
     // Hide sourceView
-    config.sourceView?.isHidden = true
+    sourceView.isHidden = true
     
     // Fade out snapshot
     UIView.springAnimate(
@@ -198,7 +199,7 @@ extension PHZoomTransitioning {
       dimmingView.effect = config.dimmingVisualEffect
       snapshot.frame = toView.frame
     } completion: { [self] _ in
-      config.sourceView?.isHidden = true
+      sourceView.isHidden = true
       blurView.removeFromSuperview()
       snapshot.removeFromSuperview()
       toView.mask = nil
@@ -220,10 +221,13 @@ extension PHZoomTransitioning {
     let toFrame = options.toRect
     
     let baseSnapshot: UIView
+    let resolvedSourceView = context.sourceView(forKey: .from, transition: transition)
+      ?? context.sourceView(forKey: .to, transition: transition)
+    
     if let sourceView {
       baseSnapshot = sourceView
-    } else if let sourceView = config.sourceView,
-              let snapshot = makeSnapshot(from: sourceView) {
+    } else if let resolvedSourceView,
+              let snapshot = makeSnapshot(from: resolvedSourceView) {
       baseSnapshot = snapshot
       self.sourceView = snapshot
     } else {
@@ -307,7 +311,7 @@ extension PHZoomTransitioning {
       blurView.alpha = 1.0
       
     } completion: { _ in
-      self.config.sourceView?.isHidden = false
+      resolvedSourceView?.isHidden = false
       fromView.mask = nil
       blurView.removeFromSuperview()
       snapshot.removeFromSuperview()
@@ -362,13 +366,14 @@ extension PHZoomTransitioning {
   
   private func prepareViewControllers(from context: UIViewControllerContextTransitioning,
                                       for transition: Transition) {
-    if let fromVC = context.viewController(forKey: .from) as? ZoomTransitioning,
-       let customConfig = fromVC.config {
-      config = customConfig
+    if let fromVC = context.viewController(forKey: .from)?.resolvedZoomTransitioning() {
+      if let customConfig = fromVC.config {
+        config = customConfig
+      }
       fromVC.prepare(for: transition)
     }
     
-    let toVC = context.viewController(forKey: .to) as? ZoomTransitioning
+    let toVC = context.viewController(forKey: .to)?.resolvedZoomTransitioning()
     toVC?.prepare(for: transition)
   }
   

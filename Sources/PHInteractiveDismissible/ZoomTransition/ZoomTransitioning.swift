@@ -12,12 +12,17 @@ public protocol ZoomTransitioning {
   
   var sharedFrame: CGRect { get }
   var config: ZoomOptions? { get }
+  func sourceView(for transition: PHZoomTransitioning.Transition) -> UIView?
   func prepare(for transition: PHZoomTransitioning.Transition)
 }
 
 public extension ZoomTransitioning {
   var config: ZoomOptions? {
     nil
+  }
+  
+  func sourceView(for transition: PHZoomTransitioning.Transition) -> UIView? {
+    config?.sourceView
   }
   
   func prepare(for transition: PHZoomTransitioning.Transition) {
@@ -34,18 +39,38 @@ public extension ZoomTransitioning where Self: UIViewController {
     view.bounds
   }
   
+  func sourceView(for transition: PHZoomTransitioning.Transition) -> UIView? {
+    config?.sourceView
+  }
+  
   func prepare(for transition: PHZoomTransitioning.Transition) {
     
   }
 }
 
+extension UIViewController {
+  func resolvedZoomTransitioning() -> ZoomTransitioning? {
+    if let navigationController = self as? UINavigationController {
+      return navigationController.topViewController?.resolvedZoomTransitioning()
+        ?? (navigationController as? ZoomTransitioning)
+    }
+    
+    if let tabBarController = self as? UITabBarController {
+      return tabBarController.selectedViewController?.resolvedZoomTransitioning()
+        ?? (tabBarController as? ZoomTransitioning)
+    }
+    
+    return self as? ZoomTransitioning
+  }
+}
+
 extension UIViewControllerContextTransitioning {
   func sharedFrame(forKey key: UITransitionContextViewControllerKey) -> CGRect? {
-    let viewController = viewController(forKey: key)
-//    viewController?.view.layoutIfNeeded()
-    if let navigationController = viewController as? UINavigationController {
-      return (navigationController.topViewController as? ZoomTransitioning)?.sharedFrame
-    }
-    return (viewController as? ZoomTransitioning)?.sharedFrame
+    viewController(forKey: key)?.resolvedZoomTransitioning()?.sharedFrame
+  }
+  
+  func sourceView(forKey key: UITransitionContextViewControllerKey,
+                  transition: PHZoomTransitioning.Transition) -> UIView? {
+    viewController(forKey: key)?.resolvedZoomTransitioning()?.sourceView(for: transition)
   }
 }

@@ -22,7 +22,7 @@ public struct ZoomOptions {
               maskVisualEffect: UIVisualEffect? = nil,
               dimmingColor: UIColor? = UIColor.black.withAlphaComponent(0.25),
               dimmingVisualEffect: UIBlurEffect? = nil,
-              sourceView: UIView?) {
+              sourceView: UIView? = nil) {
     self.duration = duration
     self.maskCornerRadius = maskCornerRadius
     self.minimumScale = minimumScale

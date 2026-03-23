@@ -34,6 +34,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   private weak var blurView: UIVisualEffectView?
   private weak var snapshotView: UIView?
   private weak var shadowView: UIView?
+  private weak var sourceView: UIView?
   private var sourceViewWasHidden: Bool = false
   private var shadowFinalFrame: CGRect = .zero
   
@@ -273,7 +274,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
       } completion: { [weak self] _ in
         transitionContext.cancelInteractiveTransition()
         transitionContext.completeTransition(false)
-        self?.config?.sourceView?.isHidden = self?.sourceViewWasHidden ?? false
+        self?.sourceView?.isHidden = self?.sourceViewWasHidden ?? false
         self?.cleanUpTransitionViews()
         self?.resetInteractionState()
       }
@@ -319,7 +320,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
       } completion: { [weak self] _ in
         transitionContext.finishInteractiveTransition()
         transitionContext.completeTransition(true)
-        self?.config?.sourceView?.isHidden = false
+        self?.sourceView?.isHidden = false
         self?.cleanUpTransitionViews()
         self?.resetInteractionState()
       }
@@ -400,7 +401,8 @@ extension PHZoomInteractivePopInteractionController {
       return
     }
     
-    guard let sourceView = config.sourceView else {
+    guard let sourceView = transitionContext.sourceView(forKey: .from, transition: .dismiss)
+      ?? transitionContext.sourceView(forKey: .to, transition: .dismiss) else {
       transitionContext.completeTransition(false)
       resetInteractionState()
       return
@@ -490,7 +492,7 @@ extension PHZoomInteractivePopInteractionController {
       fromView.insertSubview(blurView, belowSubview: snapshot)
     }
     
-    let finalCornerRadius: CGFloat = config.sourceView?.layer.cornerRadius ?? snapshot.layer.cornerRadius
+    let finalCornerRadius: CGFloat = sourceView.layer.cornerRadius
 
     self.fromView = fromView
     self.toView = toView
@@ -509,16 +511,14 @@ extension PHZoomInteractivePopInteractionController {
     self.blurView = blurView
     self.snapshotView = snapshot
     self.shadowView = shadowView
+    self.sourceView = sourceView
     self.shadowFinalFrame = maskFrame
 
-    config.sourceView?.isHidden = true
+    sourceView.isHidden = true
   }
   
   private func configForPresentedViewController(_ viewController: UIViewController?) -> ZoomOptions? {
-    if let navigationController = viewController as? UINavigationController {
-      return (navigationController.topViewController as? ZoomTransitioning)?.config
-    }
-    return (viewController as? ZoomTransitioning)?.config
+    viewController?.resolvedZoomTransitioning()?.config
   }
   
   private func interpolateValue(from: CGFloat, to: CGFloat, progress: CGFloat) -> CGFloat {

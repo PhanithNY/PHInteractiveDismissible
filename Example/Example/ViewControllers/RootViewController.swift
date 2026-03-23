@@ -28,9 +28,12 @@ final class RootViewController: UIViewController, ZoomTransitioning {
       duration: 0.4,
       maskVisualEffect: nil,
       dimmingColor: UIColor.black.withAlphaComponent(0.25),
-      dimmingVisualEffect: nil,//UIBlurEffect(style: .systemUltraThinMaterial),
-      sourceView: tapBarItem ? sourceView : selectedCell?.iconContainerView
+      dimmingVisualEffect: UIBlurEffect(style: .systemUltraThinMaterial)
     )
+  }
+  
+  func sourceView(for transition: PHInteractiveDismissible.PHZoomTransitioning.Transition) -> UIView? {
+    tapBarItem ? sourceView : selectedCell?.iconContainerView
   }
   
   // MARK: - Properties
