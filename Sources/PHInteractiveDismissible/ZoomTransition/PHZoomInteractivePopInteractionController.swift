@@ -22,7 +22,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   
   private weak var fromView: UIView?
   private weak var toView: UIView?
-  private var config: ZoomOptions?
+  private var zoomOption: ZoomOptions?
   private var resultTransform: CGAffineTransform = .identity
   private var resultScaleFactor: CGFloat = 1.0
   private var initialMaskFrame: CGRect = .zero
@@ -270,8 +270,8 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
       return nil
     }
     
-    guard let toRect = context.sharedFrame(forKey: .to, transition: .dismiss),
-          let fromRect = context.sharedFrame(forKey: .from, transition: .dismiss) else {
+    guard let toRect = context.zoomRect(forKey: .to, transition: .dismiss),
+          let fromRect = context.zoomRect(forKey: .from, transition: .dismiss) else {
       return nil
     }
     
@@ -300,7 +300,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
 
     transitionContext.updateInteractiveTransition(progress)
 
-    let minimumScale = config?.minimumScale ?? 0.5
+    let minimumScale = zoomOption?.minimumScale ?? 0.5
     let weightedTranslationX = weightedTranslation(translation, progress: progress)
     let weightedTranslationY = weightedVerticalTranslation(translationY)
     let weightedProgress = weightedScaleProgress(progress)
@@ -351,7 +351,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     }
 
     UIView.springAnimate(
-      springDuration: config?.duration ?? 0.35,
+      springDuration: zoomOption?.duration ?? 0.35,
       bounce: 0.0,
       initialSpringVelocity: 10.0,
       delay: 0.0,
@@ -361,7 +361,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
         maskView.layer.cornerRadius = self.initialCornerRadius
         overlayView.layer.opacity = 1.0
         self.dimmingView?.alpha = 1.0
-        self.dimmingView?.effect = self.config?.dimmingVisualEffect
+        self.dimmingView?.effect = self.zoomOption?.dimmingVisualEffect
         self.blurView?.alpha = 0.0
         snapshotView.frame = self.initialSnapshotFrame
         snapshotView.layer.cornerRadius = self.initialCornerRadius
@@ -388,9 +388,9 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
           let snapshotView else { return }
 
     // Match non-interactive dismissal timing for snapshot crossfade (blur morph removed).
-    let finishDuration = max((config?.duration ?? 0.35) * 1.32, 0.5)
+    let finishDuration = max((zoomOption?.duration ?? 0.35) * 1.32, 0.5)
     let morphDuration = finishDuration * 0.24
-    let morphDelay = ((config?.maskVisualEffect == nil) ? finishDuration * 0.28
+    let morphDelay = ((zoomOption?.maskVisualEffect == nil) ? finishDuration * 0.28
                                                        : finishDuration * 0.5)
     
 
@@ -500,8 +500,8 @@ extension PHZoomInteractivePopInteractionController {
     
     let presentedViewController = transitionContext.viewController(forKey: .from)
     let presentingViewController = transitionContext.viewController(forKey: .to)
-    guard let config = configForPresentedViewController(presentedViewController)
-      ?? configForPresentedViewController(presentingViewController) else {
+    guard let zoomOption = zoomOptionForPresentedViewController(presentedViewController)
+      ?? zoomOptionForPresentedViewController(presentingViewController) else {
       transitionContext.completeTransition(false)
       resetInteractionState()
       return
@@ -521,7 +521,7 @@ extension PHZoomInteractivePopInteractionController {
     )
     
     let maskFrame = toFrame.aspectFit(to: fromFrame)
-    let initialCornerRadius: CGFloat = config.maskCornerRadius
+    let initialCornerRadius: CGFloat = zoomOption.maskCornerRadius
     
     let mask = UIView(frame: fromView.frame).then {
       $0.backgroundColor = .black
@@ -530,19 +530,19 @@ extension PHZoomInteractivePopInteractionController {
     }
     
     let overlay = UIView().then {
-      $0.backgroundColor = config.dimmingColor
+      $0.backgroundColor = zoomOption.dimmingColor
       $0.layer.opacity = 1.0
       $0.frame = toView.frame
     }
     
-    let dimmingView: UIVisualEffectView? = config.dimmingVisualEffect.map {
+    let dimmingView: UIVisualEffectView? = zoomOption.dimmingVisualEffect.map {
       UIVisualEffectView(effect: $0).then {
         $0.frame = toView.frame
         $0.alpha = 1.0
         $0.autoresizingMask = [.flexibleWidth, .flexibleHeight]
       }
     }
-    let blurView: UIVisualEffectView? = config.maskVisualEffect.map {
+    let blurView: UIVisualEffectView? = zoomOption.maskVisualEffect.map {
       UIVisualEffectView(effect: $0).then {
         $0.alpha = 0.0
         $0.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -602,7 +602,7 @@ extension PHZoomInteractivePopInteractionController {
 
     self.fromView = fromView
     self.toView = toView
-    self.config = config
+    self.zoomOption = zoomOption
     self.resultTransform = result.transform
     self.resultScaleFactor = result.scaleFactor
     self.initialMaskFrame = fromView.frame
@@ -623,8 +623,8 @@ extension PHZoomInteractivePopInteractionController {
     sourceView.isHidden = true
   }
   
-  private func configForPresentedViewController(_ viewController: UIViewController?) -> ZoomOptions? {
-    viewController?.resolvedZoomTransitioning()?.config
+  private func zoomOptionForPresentedViewController(_ viewController: UIViewController?) -> ZoomOptions? {
+    viewController?.resolvedZoomTransitioning()?.zoomOption
   }
   
   private func interpolateValue(from: CGFloat, to: CGFloat, progress: CGFloat) -> CGFloat {

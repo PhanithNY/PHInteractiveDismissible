@@ -24,7 +24,7 @@ public class PHZoomTransitioning: NSObject {
   
   private var sourceView: UIView?
   
-  private var config: ZoomOptions = .default
+  private var zoomOption: ZoomOptions = .default
   
 }
 
@@ -32,7 +32,7 @@ public class PHZoomTransitioning: NSObject {
 
 extension PHZoomTransitioning: UIViewControllerAnimatedTransitioning {
   public func transitionDuration(using transitionContext: UIViewControllerContextTransitioning?) -> TimeInterval {
-    config.duration
+    zoomOption.duration
   }
   
   public func animateTransition(using transitionContext: UIViewControllerContextTransitioning) {
@@ -103,7 +103,7 @@ extension PHZoomTransitioning {
     let initialCornerRadius: CGFloat = snapshot.layer.cornerRadius / result.scaleFactor
     
     // Represent the final corner radius for our mask view
-    let finalCornerRadius: CGFloat = config.maskCornerRadius
+    let finalCornerRadius: CGFloat = zoomOption.maskCornerRadius
     
     // Our mask view
     let mask = UIView(frame: maskFrame).then {
@@ -114,7 +114,7 @@ extension PHZoomTransitioning {
     
     // Our overlay view
     let overlay = UIView().then {
-      $0.backgroundColor = config.dimmingColor
+      $0.backgroundColor = zoomOption.dimmingColor
       $0.layer.opacity = 0
       $0.frame = fromView.frame
     }
@@ -139,7 +139,7 @@ extension PHZoomTransitioning {
     toView.addSubview(snapshot)
     
     // Create blur effect for morphing
-    let maskVisualEffect = config.maskVisualEffect
+    let maskVisualEffect = zoomOption.maskVisualEffect
     let blurView = UIVisualEffectView(effect: maskVisualEffect).then {
       $0.contentView.backgroundColor = snapshot.backgroundColor
       $0.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -150,20 +150,20 @@ extension PHZoomTransitioning {
     toView.addSubview(blurView)
     
     // Duration to morph from snapshot and blur view to destination view.
-    let morphDuration = config.duration * 0.25
+    let morphDuration = zoomOption.duration * 0.25
     
     // Delay duration for blur effect from effect to nil
-    let delayMorphDuration: TimeInterval = config.duration * 0.15
+    let delayMorphDuration: TimeInterval = zoomOption.duration * 0.15
     
     // The animation duration
-    let springDuration: TimeInterval = config.duration * 0.75
+    let springDuration: TimeInterval = zoomOption.duration * 0.75
     
     // Hide sourceView
     sourceView.isHidden = true
     
     // Fade out snapshot
     UIView.springAnimate(
-      springDuration: config.maskVisualEffect == nil ? config.duration * 0.1 : morphDuration,
+      springDuration: zoomOption.maskVisualEffect == nil ? zoomOption.duration * 0.1 : morphDuration,
       bounce: 0.0,
       initialSpringVelocity: 10.0,
       delay: 0.0,
@@ -196,7 +196,7 @@ extension PHZoomTransitioning {
       mask.frame = toView.frame
       mask.layer.cornerRadius = finalCornerRadius
       overlay.layer.opacity = 1.0
-      dimmingView.effect = config.dimmingVisualEffect
+      dimmingView.effect = zoomOption.dimmingVisualEffect
       snapshot.frame = toView.frame
     } completion: { [self] _ in
       sourceView.isHidden = true
@@ -249,13 +249,13 @@ extension PHZoomTransitioning {
     // Our mask view
     let mask = UIView(frame: fromView.frame).then {
       $0.backgroundColor = .black
-      $0.layer.cornerRadius = config.maskCornerRadius
+      $0.layer.cornerRadius = zoomOption.maskCornerRadius
       $0.layer.masksToBounds = true
     }
     
     // Our overlay view
     let overlay = UIView().then {
-      $0.backgroundColor = config.dimmingColor
+      $0.backgroundColor = zoomOption.dimmingColor
       $0.layer.opacity = 1.0
       $0.frame = toView.frame
     }
@@ -279,7 +279,7 @@ extension PHZoomTransitioning {
     let maskFrame = toFrame.aspectFit(to: fromFrame)
     
     // Create blur effect for morphing
-    let blurEffect = config.maskVisualEffect
+    let blurEffect = zoomOption.maskVisualEffect
     let blurView = UIVisualEffectView(effect: nil).then {
       $0.alpha = 0.0
       $0.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -288,13 +288,13 @@ extension PHZoomTransitioning {
     fromView.insertSubview(blurView, belowSubview: snapshot)
     
     // The duration for morph between zero blur to fully blur with snapshot visible
-    let morphDuration = config.duration * 0.25
+    let morphDuration = zoomOption.duration * 0.25
     
     // Calculate morph timing
-    let morphDelay = config.maskVisualEffect == nil ? (config.duration * 0.3) : config.duration * 0.5
+    let morphDelay = zoomOption.maskVisualEffect == nil ? (zoomOption.duration * 0.3) : zoomOption.duration * 0.5
     
     UIView.springAnimate(
-      springDuration: config.duration,
+      springDuration: zoomOption.duration,
       bounce: 0.1,
       initialSpringVelocity: 0.0,
       delay: 0.0,
@@ -326,7 +326,7 @@ extension PHZoomTransitioning {
       springDuration: morphDuration,
       bounce: 0.0,
       initialSpringVelocity: 0.0,
-      delay: config.duration * 0.15,
+      delay: zoomOption.duration * 0.15,
       options: .curveEaseInOut
     ) {
       blurView.effect = blurEffect
@@ -358,7 +358,7 @@ extension PHZoomTransitioning {
   }
   
   private func makeDimmingVisualEffectView() -> UIVisualEffectView {
-    let effect = config.dimmingVisualEffect
+    let effect = zoomOption.dimmingVisualEffect
     let view = UIVisualEffectView(effect: effect)
     view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     return view
@@ -371,9 +371,9 @@ extension PHZoomTransitioning {
 
     switch transition {
     case .present:
-      config = toVC?.config ?? fromVC?.config ?? .default
+      zoomOption = toVC?.zoomOption ?? fromVC?.zoomOption ?? .default
     case .dismiss:
-      config = fromVC?.config ?? toVC?.config ?? .default
+      zoomOption = fromVC?.zoomOption ?? toVC?.zoomOption ?? .default
     }
 
     fromVC?.prepare(for: transition)
@@ -386,8 +386,8 @@ extension PHZoomTransitioning {
       return nil
     }
     
-    guard let toRect = context.sharedFrame(forKey: .to, transition: transition),
-          let fromRect = context.sharedFrame(forKey: .from, transition: transition) else {
+    guard let toRect = context.zoomRect(forKey: .to, transition: transition),
+          let fromRect = context.zoomRect(forKey: .from, transition: transition) else {
       return nil
     }
     

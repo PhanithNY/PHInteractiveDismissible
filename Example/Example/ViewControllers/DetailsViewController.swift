@@ -17,7 +17,7 @@ final class DetailsViewController: UIViewController, InteractiveDismissible, Zoo
     44
   }
   
-  var config: PHInteractiveDismissible.ZoomOptions? {
+  var zoomOption: PHInteractiveDismissible.ZoomOptions? {
     return .init(
       duration: 0.4,
       maskVisualEffect: UIBlurEffect(style: .systemThickMaterial),
@@ -132,16 +132,11 @@ extension DetailsViewController {
 }
 
 extension UINavigationController: @retroactive ZoomTransitioning {
-  
-  public var sharedFrame: CGRect {
-    (topViewController as? ZoomTransitioning)?.sharedFrame ?? .zero
-  }
-  
   public func prepare(for transition: PHInteractiveDismissible.PHZoomTransitioning.Transition) {
     (topViewController as? ZoomTransitioning)?.prepare(for: transition)
   }
   
-  public var config: PHInteractiveDismissible.ZoomOptions? {
-    (topViewController as? ZoomTransitioning)?.config
+  public var zoomOption: PHInteractiveDismissible.ZoomOptions? {
+    (topViewController as? ZoomTransitioning)?.zoomOption
   }
 }

@@ -10,22 +10,6 @@ import PHInteractiveDismissible
 import UIKit
 
 final class RootViewController: UIViewController, ZoomTransitioning {
-
-  private var sourceView: UIView? {
-    (navigationItem.rightBarButtonItem?.value(forKey: "view") as? UIView)?.superview?.superview?.superview?.superview?.superview?.superview?.superview?.superview?.superview?.superview
-  }
-  
-  var sharedFrame: CGRect {
-    if tapBarItem, let sourceView {
-      let frame = sourceView.convert(sourceView.bounds, to: nil)
-      return frame
-    }
-    return selectedCell!.iconContainerView.convert(selectedCell!.iconContainerView.bounds, to: nil)
-  }
-  
-  func sourceView(for transition: PHInteractiveDismissible.PHZoomTransitioning.Transition) -> UIView? {
-    tapBarItem ? sourceView : selectedCell?.iconContainerView
-  }
   
   // MARK: - Properties
   
@@ -130,7 +114,7 @@ final class RootViewController: UIViewController, ZoomTransitioning {
     
     if indexPath.item > 0 {
       zoom(to: navigationController, from: selectedCell.unsafelyUnwrapped.iconContainerView, sourceRect: .zero) {
-        print("Hello")
+        
       }
       return
     }

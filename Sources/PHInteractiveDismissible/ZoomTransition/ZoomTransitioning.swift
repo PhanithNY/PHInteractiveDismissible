@@ -10,19 +10,18 @@ import UIKit
 public protocol ZoomTransitioning {
   typealias Options = (fromView: UIView, fromRect: CGRect, toView: UIView, toRect: CGRect)
   
-  var sharedFrame: CGRect { get }
-  var config: ZoomOptions? { get }
+  var zoomOption: ZoomOptions? { get }
   func sourceView(for transition: PHZoomTransitioning.Transition) -> UIView?
   func prepare(for transition: PHZoomTransitioning.Transition)
 }
 
 public extension ZoomTransitioning {
-  var config: ZoomOptions? {
+  var zoomOption: ZoomOptions? {
     nil
   }
   
   func sourceView(for transition: PHZoomTransitioning.Transition) -> UIView? {
-    config?.sourceView
+    nil
   }
   
   func prepare(for transition: PHZoomTransitioning.Transition) {
@@ -31,7 +30,7 @@ public extension ZoomTransitioning {
 }
 
 public extension ZoomTransitioning where Self: UIViewController {
-  var config: ZoomOptions? {
+  var zoomOption: ZoomOptions? {
     return .init(
       duration: 0.4,
       maskVisualEffect: nil,
@@ -39,13 +38,9 @@ public extension ZoomTransitioning where Self: UIViewController {
       dimmingVisualEffect: nil
     )
   }
-  
-  var sharedFrame: CGRect {
-    view.bounds
-  }
-  
+
   func sourceView(for transition: PHZoomTransitioning.Transition) -> UIView? {
-    config?.sourceView
+    nil
   }
   
   func prepare(for transition: PHZoomTransitioning.Transition) {
@@ -70,23 +65,26 @@ extension UIViewController {
 }
 
 extension UIViewControllerContextTransitioning {
-  func sharedFrame(forKey key: UITransitionContextViewControllerKey,
-                   transition: PHZoomTransitioning.Transition) -> CGRect? {
+  
+  func zoomRect(forKey key: UITransitionContextViewControllerKey,
+                transition: PHZoomTransitioning.Transition) -> CGRect? {
     let controller = viewController(forKey: key)
-
-    if let frame = controller?.resolvedZoomTransitioning()?.sharedFrame {
-      return frame
-    }
-
-    if let frame = controller?._zoomTransitionSourceRect {
-      return frame
-    }
 
     switch (transition, key) {
     case (.present, .from):
-      return viewController(forKey: .to)?._zoomTransitionSourceRect
+      return sourceRect(for: controller, transition: transition)
+        ?? sourceRect(for: viewController(forKey: .to), transition: transition)
+      
+    case (.present, .to):
+      return presentedRect(for: controller)
+      
+    case (.dismiss, .from):
+      return presentedRect(for: controller)
+      
     case (.dismiss, .to):
-      return viewController(forKey: .from)?._zoomTransitionSourceRect
+      return sourceRect(for: controller, transition: transition)
+        ?? sourceRect(for: viewController(forKey: .from), transition: transition)
+      
     default:
       return nil
     }
@@ -107,10 +105,33 @@ extension UIViewControllerContextTransitioning {
     switch (transition, key) {
     case (.present, .from):
       return viewController(forKey: .to)?._zoomTransitionSourceView
+      
     case (.dismiss, .to):
       return viewController(forKey: .from)?._zoomTransitionSourceView
+      
     default:
       return nil
     }
+  }
+  
+  private func sourceRect(for controller: UIViewController?,
+                          transition: PHZoomTransitioning.Transition) -> CGRect? {
+    if let sourceView = controller?.resolvedZoomTransitioning()?.sourceView(for: transition) {
+      return sourceView.convert(sourceView.bounds, to: nil)
+    }
+
+    if let frame = controller?._zoomTransitionSourceRect {
+      return frame
+    }
+
+    return nil
+  }
+
+  private func presentedRect(for controller: UIViewController?) -> CGRect? {
+    guard let view = controller?.view else {
+      return nil
+    }
+
+    return view.bounds
   }
 }
