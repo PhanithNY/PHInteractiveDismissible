@@ -335,10 +335,10 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     snapshotView.alpha = 0.0
     
     // Removable
-//    let presentedViewController = transitionContext.viewController(forKey: .from).unsafelyUnwrapped
-//    if let modalPresentationController = presentedViewController.presentationController as? PHZoomPresentationController {
-//      modalPresentationController.fadeView.alpha = (1.0 - progress)/2
-//    }
+    if let presentedViewController = transitionContext.viewController(forKey: .from),
+       let modalPresentationController = presentedViewController.presentationController as? PHZoomPresentationController {
+      modalPresentationController.fadeView.alpha = 0.5 * (1.0 - progress)
+    }
   }
   
   private func cancel(initialSpringVelocity: CGFloat) {
@@ -371,6 +371,9 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
           roundedRect: CGRect(origin: .zero, size: fromView.bounds.size),
           cornerRadius: self.initialCornerRadius
         ).cgPath
+        if let modalPresentationController = transitionContext.viewController(forKey: .from)?.presentationController as? PHZoomPresentationController {
+          modalPresentationController.fadeView.alpha = 0.5
+        }
       } completion: { [weak self] _ in
         transitionContext.cancelInteractiveTransition()
         transitionContext.completeTransition(false)
@@ -417,6 +420,9 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
         ).cgPath
         
         snapshotView.alpha = 1.0
+        if let modalPresentationController = transitionContext.viewController(forKey: .from)?.presentationController as? PHZoomPresentationController {
+          modalPresentationController.fadeView.alpha = 0.0
+        }
       } completion: { [weak self] _ in
         transitionContext.finishInteractiveTransition()
         transitionContext.completeTransition(true)

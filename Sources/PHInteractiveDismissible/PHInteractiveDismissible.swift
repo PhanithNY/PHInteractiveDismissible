@@ -40,7 +40,7 @@ public extension UIViewController {
     viewController._zoomTransitionSourceRect = sourceRect == .zero ? sourceView.convert(sourceView.bounds, to: nil) : sourceRect
     viewController.interactiveTransitionManager = delegate
     viewController.transitioningDelegate = delegate
-    viewController.modalPresentationStyle = .overCurrentContext
+    viewController.modalPresentationStyle = .custom
 
     present(viewController, animated: true) {
       completion?()
