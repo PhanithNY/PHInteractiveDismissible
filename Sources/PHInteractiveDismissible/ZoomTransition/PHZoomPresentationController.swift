@@ -57,6 +57,8 @@ public final class PHZoomPresentationController: UIPresentationController {
     presentingViewController.view.isHidden = false
     guard let coordinator = presentedViewController.transitionCoordinator else {
       fadeView.alpha = 0.0
+      didBeginDismissalAppearanceTransition = true
+      presentingViewController.beginAppearanceTransition(true, animated: true)
       return
     }
 
@@ -84,11 +86,20 @@ public final class PHZoomPresentationController: UIPresentationController {
           self.didBeginDismissalAppearanceTransition = false
         }
       } else {
-        if self.didBeginDismissalAppearanceTransition {
-          self.presentingViewController.endAppearanceTransition()
-          self.didBeginDismissalAppearanceTransition = false
-        }
+        // Non-interactive dismissal completion is finalized in dismissalTransitionDidEnd.
       }
     }
+  }
+
+  public override func dismissalTransitionDidEnd(_ completed: Bool) {
+    guard didBeginDismissalAppearanceTransition else {
+      return
+    }
+
+    presentingViewController.endAppearanceTransition()
+    if !completed {
+      presentingViewController.view.isHidden = true
+    }
+    didBeginDismissalAppearanceTransition = false
   }
 }
