@@ -29,7 +29,6 @@ final class RootViewController: UIViewController, ZoomTransitioning {
   
   // MARK: - Properties
   
-  var delegate = PHZoomTransitioningDelegate(interactionController: nil)
   private var selectedCell: GridCell?
   private var tapBarItem: Bool = false
   
@@ -128,18 +127,18 @@ final class RootViewController: UIViewController, ZoomTransitioning {
     
     let controller = DetailsViewController()
     let navigationController = UINavigationController(rootViewController: controller)
-    let  interactionController = PHZoomInteractivePopInteractionController(viewController: navigationController)
-    delegate = .init(interactionController: interactionController)
     
     if indexPath.item > 0 {
-      navigationController.transitioningDelegate = delegate
-      navigationController.modalPresentationStyle = .custom
-    } else {
-      if #available(iOS 18.0, *) {
-        navigationController.preferredTransition = .zoom(sourceViewProvider: { [self] context in
-          selectedCell?.iconContainerView
-        })
+      zoom(to: navigationController, from: selectedCell.unsafelyUnwrapped.iconContainerView, sourceRect: .zero) {
+        print("Hello")
       }
+      return
+    }
+    
+    if #available(iOS 18.0, *) {
+      navigationController.preferredTransition = .zoom(sourceViewProvider: { [self] context in
+        selectedCell?.iconContainerView
+      })
     }
     
     present(navigationController, animated: true)

@@ -386,8 +386,8 @@ extension PHZoomTransitioning {
       return nil
     }
     
-    guard let toRect = context.sharedFrame(forKey: .to),
-          let fromRect = context.sharedFrame(forKey: .from) else {
+    guard let toRect = context.sharedFrame(forKey: .to, transition: transition),
+          let fromRect = context.sharedFrame(forKey: .from, transition: transition) else {
       return nil
     }
     

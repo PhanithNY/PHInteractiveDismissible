@@ -70,12 +70,47 @@ extension UIViewController {
 }
 
 extension UIViewControllerContextTransitioning {
-  func sharedFrame(forKey key: UITransitionContextViewControllerKey) -> CGRect? {
-    viewController(forKey: key)?.resolvedZoomTransitioning()?.sharedFrame
+  func sharedFrame(forKey key: UITransitionContextViewControllerKey,
+                   transition: PHZoomTransitioning.Transition) -> CGRect? {
+    let controller = viewController(forKey: key)
+
+    if let frame = controller?.resolvedZoomTransitioning()?.sharedFrame {
+      return frame
+    }
+
+    if let frame = controller?._zoomTransitionSourceRect {
+      return frame
+    }
+
+    switch (transition, key) {
+    case (.present, .from):
+      return viewController(forKey: .to)?._zoomTransitionSourceRect
+    case (.dismiss, .to):
+      return viewController(forKey: .from)?._zoomTransitionSourceRect
+    default:
+      return nil
+    }
   }
   
   func sourceView(forKey key: UITransitionContextViewControllerKey,
                   transition: PHZoomTransitioning.Transition) -> UIView? {
-    viewController(forKey: key)?.resolvedZoomTransitioning()?.sourceView(for: transition)
+    let controller = viewController(forKey: key)
+
+    if let sourceView = controller?.resolvedZoomTransitioning()?.sourceView(for: transition) {
+      return sourceView
+    }
+
+    if let sourceView = controller?._zoomTransitionSourceView {
+      return sourceView
+    }
+
+    switch (transition, key) {
+    case (.present, .from):
+      return viewController(forKey: .to)?._zoomTransitionSourceView
+    case (.dismiss, .to):
+      return viewController(forKey: .from)?._zoomTransitionSourceView
+    default:
+      return nil
+    }
   }
 }

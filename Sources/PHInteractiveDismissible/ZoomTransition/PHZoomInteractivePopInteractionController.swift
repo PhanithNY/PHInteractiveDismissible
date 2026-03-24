@@ -270,8 +270,8 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
       return nil
     }
     
-    guard let toRect = context.sharedFrame(forKey: .to),
-          let fromRect = context.sharedFrame(forKey: .from) else {
+    guard let toRect = context.sharedFrame(forKey: .to, transition: .dismiss),
+          let fromRect = context.sharedFrame(forKey: .from, transition: .dismiss) else {
       return nil
     }
     

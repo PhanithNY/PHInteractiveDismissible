@@ -27,11 +27,41 @@ public extension UIViewController {
       completion?()
     }
   }
+
+  func zoom(to viewController: InteractiveDismissible & ZoomTransitioning,
+            from sourceView: UIView,
+            sourceRect: CGRect,
+            completion: (() -> Void)? = nil) {
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
+    let delegate = PHZoomTransitioningDelegate(interactionController: interactionController)
+
+    viewController._zoomTransitioningDelegate = delegate
+    viewController._zoomTransitionSourceView = sourceView
+    viewController._zoomTransitionSourceRect = sourceRect == .zero ? sourceView.convert(sourceView.bounds, to: nil) : sourceRect
+    viewController.interactiveTransitionManager = delegate
+    viewController.transitioningDelegate = delegate
+    viewController.modalPresentationStyle = .overCurrentContext
+
+    present(viewController, animated: true) {
+      completion?()
+    }
+  }
 }
 
 extension UIViewController {
   fileprivate struct Holder {
     static var backButtonEnabled: UInt8 = 0
+    static var zoomTransitioningDelegate: UInt8 = 0
+    static var zoomTransitionSourceRect: UInt8 = 0
+    static var zoomTransitionSourceView: UInt8 = 0
+  }
+
+  fileprivate final class WeakViewBox {
+    weak var value: UIView?
+
+    init(_ value: UIView?) {
+      self.value = value
+    }
   }
   
   public var backButtonEnabled: Bool {
@@ -40,6 +70,35 @@ extension UIViewController {
     }
     set(newValue) {
       objc_setAssociatedObject(self, &Holder.backButtonEnabled, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+  }
+
+  var _zoomTransitioningDelegate: PHZoomTransitioningDelegate? {
+    get {
+      objc_getAssociatedObject(self, &Holder.zoomTransitioningDelegate) as? PHZoomTransitioningDelegate
+    }
+    set {
+      objc_setAssociatedObject(self, &Holder.zoomTransitioningDelegate, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+  }
+
+  var _zoomTransitionSourceRect: CGRect? {
+    get {
+      (objc_getAssociatedObject(self, &Holder.zoomTransitionSourceRect) as? NSValue)?.cgRectValue
+    }
+    set {
+      let value = newValue.map(NSValue.init(cgRect:))
+      objc_setAssociatedObject(self, &Holder.zoomTransitionSourceRect, value, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+  }
+
+  var _zoomTransitionSourceView: UIView? {
+    get {
+      (objc_getAssociatedObject(self, &Holder.zoomTransitionSourceView) as? WeakViewBox)?.value
+    }
+    set {
+      let box = WeakViewBox(newValue)
+      objc_setAssociatedObject(self, &Holder.zoomTransitionSourceView, box, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     }
   }
 }
