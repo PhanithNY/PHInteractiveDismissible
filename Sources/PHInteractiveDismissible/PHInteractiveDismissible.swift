@@ -30,17 +30,22 @@ public extension UIViewController {
 
   func zoom(to viewController: InteractiveDismissible & ZoomTransitioning,
             from sourceView: UIView,
-            sourceRect: CGRect,
+            sourceRect: CGRect? = nil,
+            with presentationStyle: UIModalPresentationStyle = .custom,
             completion: (() -> Void)? = nil) {
     let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
     let delegate = PHZoomTransitioningDelegate(interactionController: interactionController)
 
     viewController._zoomTransitioningDelegate = delegate
     viewController._zoomTransitionSourceView = sourceView
-    viewController._zoomTransitionSourceRect = sourceRect == .zero ? sourceView.convert(sourceView.bounds, to: nil) : sourceRect
+    if let sourceRect, sourceRect != .zero {
+      viewController._zoomTransitionSourceRect = sourceRect
+    } else {
+      viewController._zoomTransitionSourceRect = sourceView.convert(sourceView.bounds, to: nil)
+    }
     viewController.interactiveTransitionManager = delegate
     viewController.transitioningDelegate = delegate
-    viewController.modalPresentationStyle = .custom
+    viewController.modalPresentationStyle = presentationStyle
 
     present(viewController, animated: true) {
       completion?()

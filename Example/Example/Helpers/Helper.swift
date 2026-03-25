@@ -29,6 +29,6 @@ extension UINavigationController: PHInteractiveDismissible.InteractiveDismissibl
   }
   
   public var preferredCornerRadius: CGFloat? {
-    (topViewController as? InteractiveDismissible)?.preferredCornerRadius ?? 44
+    (topViewController as? InteractiveDismissible)?.preferredCornerRadius ?? UIScreen.main.displayCornerRadius
   }
 }

@@ -13,9 +13,6 @@ final class DetailsViewController: UIViewController, InteractiveDismissible, Zoo
 
   var dismissibleScrollView: UIScrollView? { nil }
   var interactiveTransitionManager: (any UIViewControllerTransitioningDelegate)?
-  var preferredCornerRadius: CGFloat? {
-    44
-  }
   
   var zoomOption: PHInteractiveDismissible.ZoomOptions? {
     return .init(
