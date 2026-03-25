@@ -479,12 +479,18 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
 
 extension PHZoomInteractivePopInteractionController: UIGestureRecognizerDelegate {
   public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    if let navigationController = viewController as? UINavigationController {
+      return navigationController.viewControllers.count == 1
+    }
+    
     if gestureRecognizer is UIPinchGestureRecognizer {
       return !interactionInProgress
     }
+    
     if let scrollView = viewController.dismissibleScrollView {
       return scrollView.contentOffset.x <= 0
     }
+    
     return true
   }
 }
