@@ -69,9 +69,14 @@ extension UIViewControllerContextTransitioning {
     containerView.layoutIfNeeded()
 
     [viewController(forKey: .from), viewController(forKey: .to)].forEach { viewController in
-      viewController?.view.setNeedsLayout()
-      viewController?.view.layoutIfNeeded()
-      viewController?.view.window?.layoutIfNeeded()
+      guard let view = viewController?.view,
+            view.window != nil || view.isDescendant(of: containerView) else {
+        return
+      }
+
+      view.setNeedsLayout()
+      view.layoutIfNeeded()
+      view.window?.layoutIfNeeded()
     }
   }
   
@@ -85,10 +90,10 @@ extension UIViewControllerContextTransitioning {
         ?? sourceRect(for: viewController(forKey: .to), transition: transition)
       
     case (.present, .to):
-      return presentedRect(for: controller)
+      return presentedRect(for: controller, key: key, transition: transition)
       
     case (.dismiss, .from):
-      return presentedRect(for: controller)
+      return presentedRect(for: controller, key: key, transition: transition)
       
     case (.dismiss, .to):
       return sourceRect(for: controller, transition: transition)
@@ -123,9 +128,17 @@ extension UIViewControllerContextTransitioning {
                           transition: PHZoomTransitioning.Transition) -> CGRect? {
     if let sourceView = resolvedSourceView(for: controller, transition: transition) {
       synchronizeZoomTransitionLayout()
-      controller?.view.layoutIfNeeded()
-      sourceView.superview?.layoutIfNeeded()
-      sourceView.window?.layoutIfNeeded()
+      if let view = controller?.view,
+         view.window != nil || view.isDescendant(of: containerView) {
+        view.layoutIfNeeded()
+      }
+      if let superview = sourceView.superview,
+         superview.window != nil || superview.isDescendant(of: containerView) {
+        superview.layoutIfNeeded()
+      }
+      if sourceView.window != nil || sourceView.isDescendant(of: containerView) {
+        sourceView.window?.layoutIfNeeded()
+      }
       return sourceView.convert(sourceView.bounds, to: containerView)
     }
 
@@ -140,8 +153,31 @@ extension UIViewControllerContextTransitioning {
     return nil
   }
 
-  private func presentedRect(for controller: UIViewController?) -> CGRect? {
-    guard let view = controller?.view else {
+  private func presentedRect(for controller: UIViewController?,
+                             key: UITransitionContextViewControllerKey,
+                             transition: PHZoomTransitioning.Transition) -> CGRect? {
+    guard let controller else {
+      return nil
+    }
+
+    switch (transition, key) {
+    case (.present, .to):
+      let finalRect = finalFrame(for: controller)
+      if !finalRect.isNull, !finalRect.isInfinite, !finalRect.isEmpty {
+        return finalRect
+      }
+
+    case (.dismiss, .from):
+      let initialRect = initialFrame(for: controller)
+      if !initialRect.isNull, !initialRect.isInfinite, !initialRect.isEmpty {
+        return initialRect
+      }
+
+    default:
+      break
+    }
+
+    guard let view = controller.view else {
       return nil
     }
 
