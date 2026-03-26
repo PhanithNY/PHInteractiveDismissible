@@ -9,7 +9,7 @@ import UIKit
 
 public final class PHZoomInteractivePopInteractionController: NSObject, InteractiveTransitioning {
   private enum InteractionDriver {
-    case edgePan
+    case pan
     case pinch
   }
   
@@ -64,8 +64,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   }
   
   private func prepareGestureRecognizer(in view: UIView) {
-    let gesture = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
-    gesture.edges = .left
+    let gesture = UIPanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
     gesture.delegate = self
     view.addGestureRecognizer(gesture)
 
@@ -86,8 +85,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   }
   
   private func resolveScrollViewGestures(_ scrollView: UIScrollView) {
-    let scrollGestureRecognizer = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
-    scrollGestureRecognizer.edges = .left
+    let scrollGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
     scrollGestureRecognizer.delegate = self
     
     scrollView.addGestureRecognizer(scrollGestureRecognizer)
@@ -97,7 +95,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   // MARK: - Gesture handling
   
   @objc
-  private func handleGesture(_ gestureRecognizer: UIScreenEdgePanGestureRecognizer) {
+  private func handleGesture(_ gestureRecognizer: UIPanGestureRecognizer) {
     guard let superview = gestureRecognizer.view?.superview else {
       return
     }
@@ -108,7 +106,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     
     switch gestureRecognizer.state {
     case .began:
-      gestureBegan(driver: .edgePan)
+      gestureBegan(driver: .pan)
       
     case .changed:
       gestureChanged(translation: translation + interruptedTranslation, velocity: velocity, translationY: translationY)
@@ -465,12 +463,22 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
 
 extension PHZoomInteractivePopInteractionController: UIGestureRecognizerDelegate {
   public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-    if let navigationController = viewController as? UINavigationController {
-      return navigationController.viewControllers.count == 1
-    }
-    
     if gestureRecognizer is UIPinchGestureRecognizer {
       return !interactionInProgress
+    }
+
+    if let navigationController = viewController as? UINavigationController,
+       navigationController.viewControllers.count > 1 {
+      return false
+    }
+    
+    if let panGestureRecognizer = gestureRecognizer as? UIPanGestureRecognizer {
+      let velocity = panGestureRecognizer.velocity(in: panGestureRecognizer.view)
+      let isRightwardPan = velocity.x > 0
+      let isPrimarilyHorizontal = abs(velocity.x) > abs(velocity.y)
+      guard isRightwardPan, isPrimarilyHorizontal else {
+        return false
+      }
     }
     
     if let scrollView = viewController.dismissibleScrollView {
