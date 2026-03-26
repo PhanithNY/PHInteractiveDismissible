@@ -36,6 +36,7 @@ extension PHZoomTransitioning: UIViewControllerAnimatedTransitioning {
   }
   
   public func animateTransition(using transitionContext: UIViewControllerContextTransitioning) {
+    transitionContext.synchronizeZoomTransitionLayout()
     prepareViewControllers(from: transitionContext, for: transition)
     
     switch transition {
@@ -224,12 +225,11 @@ extension PHZoomTransitioning {
     let resolvedSourceView = context.sourceView(forKey: .from, transition: transition)
       ?? context.sourceView(forKey: .to, transition: transition)
     
-    if let sourceView {
-      baseSnapshot = sourceView
-    } else if let resolvedSourceView,
-              let snapshot = makeSnapshot(from: resolvedSourceView) {
+    if let resolvedSourceView,
+       let snapshot = makeSnapshot(from: resolvedSourceView) {
       baseSnapshot = snapshot
-      self.sourceView = snapshot
+    } else if let sourceView {
+      baseSnapshot = sourceView
     } else {
       context.completeTransition(false)
       return
@@ -317,6 +317,7 @@ extension PHZoomTransitioning {
       snapshot.removeFromSuperview()
       overlay.removeFromSuperview()
       dimmingView.removeFromSuperview()
+      self.sourceView = nil
       let isCancelled = context.transitionWasCancelled
       context.completeTransition(!isCancelled)
     }

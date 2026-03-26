@@ -29,7 +29,6 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   private var finalMaskFrame: CGRect = .zero
   private var initialCornerRadius: CGFloat = 0
   private var finalCornerRadius: CGFloat = 0
-  private var initialSnapshotCornerRadius: CGFloat = 0
   private var initialSnapshotFrame: CGRect = .zero
   
   private weak var maskView: UIView?
@@ -40,6 +39,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   private weak var shadowView: UIView?
   private weak var sourceView: UIView?
   private var sourceViewWasHidden: Bool = false
+  private var disabledInteractionViews: [UIView] = []
   private var shadowFinalFrame: CGRect = .zero
   private var interactionDriver: InteractionDriver?
   private var initialPinchLocation: CGPoint?
@@ -392,11 +392,6 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
 
     // Match non-interactive dismissal timing for snapshot crossfade (blur morph removed).
     let finishDuration = max((zoomOption?.duration ?? 0.35) * 1.32, 0.5)
-    let morphDuration = finishDuration * 0.24
-    let morphDelay = ((zoomOption?.maskVisualEffect == nil) ? finishDuration * 0.28
-                                                       : finishDuration * 0.5)
-    
-
     UIView.springAnimate(
       springDuration: finishDuration,
       bounce: 0.2,
@@ -430,17 +425,6 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
         self?.cleanUpTransitionViews()
         self?.resetInteractionState()
       }
-    
-    
-//    UIView.springAnimate(
-//      springDuration: morphDuration,
-//      bounce: 0.0,
-//      initialSpringVelocity: 10.0,
-//      delay: morphDelay,
-//      options: .curveEaseInOut
-//    ) {
-//      snapshotView.alpha = 1.0
-//    }
   }
   
   // MARK: - Helpers
@@ -454,15 +438,17 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   }
   
   private func disableOtherTouches() {
-    viewController.view.subviews.forEach {
+    disabledInteractionViews = viewController.view.subviews.filter(\.isUserInteractionEnabled)
+    disabledInteractionViews.forEach {
       $0.isUserInteractionEnabled = false
     }
   }
   
   private func enableOtherTouches() {
-    viewController.view.subviews.forEach {
+    disabledInteractionViews.forEach {
       $0.isUserInteractionEnabled = true
     }
+    disabledInteractionViews.removeAll()
   }
   
   private func resetInteractionState() {
@@ -497,8 +483,8 @@ extension PHZoomInteractivePopInteractionController: UIGestureRecognizerDelegate
 
 extension PHZoomInteractivePopInteractionController {
   private func prepareLayouts() {
-    
     guard let transitionContext else { return }
+    transitionContext.synchronizeZoomTransitionLayout()
     guard let options = transitioningOptions(for: transitionContext) else {
       transitionContext.completeTransition(false)
       resetInteractionState()
@@ -621,7 +607,6 @@ extension PHZoomInteractivePopInteractionController {
     self.finalMaskFrame = maskFrame
     self.initialCornerRadius = initialCornerRadius
     self.finalCornerRadius = finalCornerRadius
-    self.initialSnapshotCornerRadius = snapshot.layer.cornerRadius
     self.initialSnapshotFrame = fromFrame
     self.maskView = mask
     self.overlayView = overlay
@@ -641,15 +626,6 @@ extension PHZoomInteractivePopInteractionController {
   
   private func interpolateValue(from: CGFloat, to: CGFloat, progress: CGFloat) -> CGFloat {
     from + (to - from) * progress
-  }
-  
-  private func interpolateRect(from: CGRect, to: CGRect, progress: CGFloat) -> CGRect {
-    CGRect(
-      x: interpolateValue(from: from.origin.x, to: to.origin.x, progress: progress),
-      y: interpolateValue(from: from.origin.y, to: to.origin.y, progress: progress),
-      width: interpolateValue(from: from.size.width, to: to.size.width, progress: progress),
-      height: interpolateValue(from: from.size.height, to: to.size.height, progress: progress)
-    )
   }
   
   private func interpolateTransform(from: CGAffineTransform, to: CGAffineTransform, progress: CGFloat) -> CGAffineTransform {

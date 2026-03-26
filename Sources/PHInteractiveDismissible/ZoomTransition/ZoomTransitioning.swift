@@ -65,6 +65,15 @@ extension UIViewController {
 }
 
 extension UIViewControllerContextTransitioning {
+  func synchronizeZoomTransitionLayout() {
+    containerView.layoutIfNeeded()
+
+    [viewController(forKey: .from), viewController(forKey: .to)].forEach { viewController in
+      viewController?.view.setNeedsLayout()
+      viewController?.view.layoutIfNeeded()
+      viewController?.view.window?.layoutIfNeeded()
+    }
+  }
   
   func zoomRect(forKey key: UITransitionContextViewControllerKey,
                 transition: PHZoomTransitioning.Transition) -> CGRect? {
@@ -94,20 +103,16 @@ extension UIViewControllerContextTransitioning {
                   transition: PHZoomTransitioning.Transition) -> UIView? {
     let controller = viewController(forKey: key)
 
-    if let sourceView = controller?.resolvedZoomTransitioning()?.sourceView(for: transition) {
-      return sourceView
-    }
-
-    if let sourceView = controller?._zoomTransitionSourceView {
+    if let sourceView = resolvedSourceView(for: controller, transition: transition) {
       return sourceView
     }
 
     switch (transition, key) {
     case (.present, .from):
-      return viewController(forKey: .to)?._zoomTransitionSourceView
+      return resolvedSourceView(for: viewController(forKey: .to), transition: transition)
       
     case (.dismiss, .to):
-      return viewController(forKey: .from)?._zoomTransitionSourceView
+      return resolvedSourceView(for: viewController(forKey: .from), transition: transition)
       
     default:
       return nil
@@ -116,8 +121,16 @@ extension UIViewControllerContextTransitioning {
   
   private func sourceRect(for controller: UIViewController?,
                           transition: PHZoomTransitioning.Transition) -> CGRect? {
-    if let sourceView = controller?.resolvedZoomTransitioning()?.sourceView(for: transition) {
+    if let sourceView = resolvedSourceView(for: controller, transition: transition) {
+      synchronizeZoomTransitionLayout()
+      controller?.view.layoutIfNeeded()
+      sourceView.superview?.layoutIfNeeded()
+      sourceView.window?.layoutIfNeeded()
       return sourceView.convert(sourceView.bounds, to: containerView)
+    }
+
+    guard transition == .present else {
+      return nil
     }
 
     if let frame = controller?._zoomTransitionSourceRect {
@@ -133,5 +146,18 @@ extension UIViewControllerContextTransitioning {
     }
 
     return view.convert(view.bounds, to: containerView)
+  }
+
+  private func resolvedSourceView(for controller: UIViewController?,
+                                  transition: PHZoomTransitioning.Transition) -> UIView? {
+    if let sourceView = controller?.resolvedZoomTransitioning()?.sourceView(for: transition) {
+      return sourceView
+    }
+
+    if let sourceView = controller?._zoomTransitionSourceViewProvider?() {
+      return sourceView
+    }
+
+    return controller?._zoomTransitionSourceView
   }
 }

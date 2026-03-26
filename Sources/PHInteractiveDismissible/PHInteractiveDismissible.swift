@@ -33,16 +33,37 @@ public extension UIViewController {
             sourceRect: CGRect? = nil,
             with presentationStyle: UIModalPresentationStyle = .custom,
             completion: (() -> Void)? = nil) {
+    zoom(
+      to: viewController,
+      sourceViewProvider: { sourceView },
+      sourceRect: sourceRect,
+      with: presentationStyle,
+      completion: completion
+    )
+  }
+
+  func zoom(to viewController: InteractiveDismissible & ZoomTransitioning,
+            sourceViewProvider: @escaping () -> UIView?,
+            sourceRect: CGRect? = nil,
+            with presentationStyle: UIModalPresentationStyle = .custom,
+            completion: (() -> Void)? = nil) {
     let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
     let delegate = PHZoomTransitioningDelegate(interactionController: interactionController)
 
     viewController._zoomTransitioningDelegate = delegate
-    viewController._zoomTransitionSourceView = sourceView
+    viewController._zoomTransitionSourceViewProvider = sourceViewProvider
+    viewController._zoomTransitionSourceView = sourceViewProvider()
     if let sourceRect, sourceRect.isValidZoomTransitionSourceRect {
       viewController._zoomTransitionSourceRect = sourceRect
     } else {
-      let fallbackRect = sourceView.convert(sourceView.bounds, to: nil)
-      viewController._zoomTransitionSourceRect = fallbackRect.isValidZoomTransitionSourceRect ? fallbackRect : nil
+      let fallbackView = sourceViewProvider()
+      if let fallbackView,
+         fallbackView.window != nil {
+        let fallbackRect = fallbackView.convert(fallbackView.bounds, to: nil)
+        viewController._zoomTransitionSourceRect = fallbackRect.isValidZoomTransitionSourceRect ? fallbackRect : nil
+      } else {
+        viewController._zoomTransitionSourceRect = nil
+      }
     }
     viewController.interactiveTransitionManager = delegate
     viewController.transitioningDelegate = delegate
@@ -73,12 +94,21 @@ extension UIViewController {
     static var zoomTransitioningDelegate: UInt8 = 0
     static var zoomTransitionSourceRect: UInt8 = 0
     static var zoomTransitionSourceView: UInt8 = 0
+    static var zoomTransitionSourceViewProvider: UInt8 = 0
   }
 
   fileprivate final class WeakViewBox {
     weak var value: UIView?
 
     init(_ value: UIView?) {
+      self.value = value
+    }
+  }
+
+  fileprivate final class SourceViewProviderBox {
+    let value: () -> UIView?
+
+    init(_ value: @escaping () -> UIView?) {
       self.value = value
     }
   }
@@ -118,6 +148,16 @@ extension UIViewController {
     set {
       let box = WeakViewBox(newValue)
       objc_setAssociatedObject(self, &Holder.zoomTransitionSourceView, box, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+  }
+
+  var _zoomTransitionSourceViewProvider: (() -> UIView?)? {
+    get {
+      (objc_getAssociatedObject(self, &Holder.zoomTransitionSourceViewProvider) as? SourceViewProviderBox)?.value
+    }
+    set {
+      let box = newValue.map(SourceViewProviderBox.init)
+      objc_setAssociatedObject(self, &Holder.zoomTransitionSourceViewProvider, box, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     }
   }
 }
