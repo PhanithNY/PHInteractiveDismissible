@@ -18,6 +18,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   private var presentedFrame: CGRect?
   private var cancellationAnimator: UIViewPropertyAnimator?
   private var insertedPresentedViewController: Bool = false
+  private var disabledInteractionViews: [UIView] = []
   
   // MARK: - Init
   
@@ -38,9 +39,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   }
   
   private func prepareGestureRecognizer(in view: UIView) {
-    let gesture = OneWayPanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
-    gesture.direction = .left
-    gesture.edges = gesture.direction.edges
+    let gesture = UIPanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
     gesture.delegate = self
     view.addGestureRecognizer(gesture)
     
@@ -52,9 +51,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   }
   
   private func resolveScrollViewGestures(_ scrollView: UIScrollView) {
-    let scrollGestureRecognizer = OneWayPanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
-    scrollGestureRecognizer.direction = .left
-    scrollGestureRecognizer.edges = scrollGestureRecognizer.direction.edges
+    let scrollGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
     scrollGestureRecognizer.delegate = self
     
     scrollView.addGestureRecognizer(scrollGestureRecognizer)
@@ -64,7 +61,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   // MARK: - Gesture handling
   
   @objc
-  private func handleGesture(_ gestureRecognizer: OneWayPanGestureRecognizer) {
+  private func handleGesture(_ gestureRecognizer: UIPanGestureRecognizer) {
     guard let superview = gestureRecognizer.view?.superview else {
       return
     }
@@ -258,15 +255,17 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   }
   
   private func disableOtherTouches() {
-    viewController.view.subviews.forEach {
+    disabledInteractionViews = viewController.view.subviews.filter(\.isUserInteractionEnabled)
+    disabledInteractionViews.forEach {
       $0.isUserInteractionEnabled = false
     }
   }
   
   private func enableOtherTouches() {
-    viewController.view.subviews.forEach {
+    disabledInteractionViews.forEach {
       $0.isUserInteractionEnabled = true
     }
+    disabledInteractionViews.removeAll()
   }
 
   private func resetInteractionState() {
@@ -280,8 +279,18 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
 
 extension InteractivePopInteractionController: UIGestureRecognizerDelegate {
   public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-    if let navigationController = viewController as? UINavigationController {
-      return navigationController.viewControllers.count == 1
+    if let navigationController = viewController as? UINavigationController,
+       navigationController.viewControllers.count > 1 {
+      return false
+    }
+
+    if let panGestureRecognizer = gestureRecognizer as? UIPanGestureRecognizer {
+      let velocity = panGestureRecognizer.velocity(in: panGestureRecognizer.view)
+      let isRightwardPan = velocity.x > 0
+      let isPrimarilyHorizontal = abs(velocity.x) > abs(velocity.y)
+      guard isRightwardPan, isPrimarilyHorizontal else {
+        return false
+      }
     }
     
     if let scrollView = viewController.dismissibleScrollView {

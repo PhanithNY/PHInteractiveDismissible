@@ -102,4 +102,12 @@ public final class PHModalPresentationController: UIPresentationController {
     }
     didBeginDismissalAppearanceTransition = false
   }
+
+  public override func containerViewDidLayoutSubviews() {
+    super.containerViewDidLayoutSubviews()
+
+    if let containerView {
+      fadeView.frame = containerView.bounds
+    }
+  }
 }
