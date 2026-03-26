@@ -352,7 +352,7 @@ extension PHZoomTransitioning {
     let sourceViewWasHidden = sourceView.isHidden
     sourceView.isHidden = false
     sourceView.layoutIfNeeded()
-    let snapshot = sourceView.snapshotView(afterScreenUpdates: true)
+    let snapshot = sourceView.resizableSnapshotView(from: sourceView.bounds, afterScreenUpdates: true, withCapInsets: .zero)//sourceView.snapshotView(afterScreenUpdates: true)
     sourceView.isHidden = sourceViewWasHidden
     return snapshot
   }

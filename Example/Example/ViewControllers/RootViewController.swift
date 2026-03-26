@@ -104,7 +104,14 @@ final class RootViewController: UIViewController, ZoomTransitioning {
     
     present(navigationController, animated: true)
   }
-  
+
+  @objc
+  private func didTapFirst(_ sender: UIButton) {
+    let controller = DetailsViewController()
+    let navigationController = UINavigationController(rootViewController: controller)
+    zoom(to: navigationController, from: sender)
+  }
+
   private func zoom(from indexPath: IndexPath) {
     tapBarItem = false
     selectedCell = collectionView.cellForItem(at: indexPath) as? GridCell
@@ -173,6 +180,44 @@ final class RootViewController: UIViewController, ZoomTransitioning {
         .leading()
         .trailing()
         .height(400)
+    }
+
+    if #available(iOS 15.0, *) {
+      let firstButton = UIButton(type: .system).config {
+        var config = UIButton.Configuration.borderedProminent()
+        config.baseBackgroundColor = .systemBlue
+        config.baseForegroundColor = .white
+        config.image = UIImage(systemName: "plus")
+        config.title = "Add"
+        $0.configuration = config
+        $0.addTarget(self, action: #selector(didTapFirst(_:)), for: .touchUpInside)
+      }
+
+      firstButton.layout {
+        view.addSubview($0)
+        $0.top(constraint: collectionView.bottomAnchor, 24)
+          .leading(constraint: view.readableContentGuide.leadingAnchor)
+          .height(52)
+          .width(256)
+      }
+
+      let secondButton = UIButton(type: .system).config {
+        var config = UIButton.Configuration.borderedProminent()
+        config.baseBackgroundColor = .systemBlue
+        config.baseForegroundColor = .white
+        config.image = UIImage(systemName: "plus")
+        config.title = "Add"
+        $0.configuration = config
+        $0.addTarget(self, action: #selector(didTapFirst(_:)), for: .touchUpInside)
+      }
+
+      secondButton.layout {
+        view.addSubview($0)
+        $0.top(constraint: firstButton.bottomAnchor, 24)
+          .leading(constraint: view.readableContentGuide.leadingAnchor)
+          .height(256)
+          .width(100)
+      }
     }
   }
 }

@@ -16,10 +16,10 @@ final class DetailsViewController: UIViewController, InteractiveDismissible, Zoo
   
   var zoomOption: PHInteractiveDismissible.ZoomOptions? {
     return .init(
-      duration: 0.4,
+      duration: 0.35,
       maskVisualEffect: UIBlurEffect(style: .systemThickMaterial),
-      dimmingColor: UIColor.black.withAlphaComponent(0.25),
-      dimmingVisualEffect: nil//UIBlurEffect(style: .systemUltraThinMaterial)
+      dimmingColor: nil,
+      dimmingVisualEffect: nil
     )
   }
   
