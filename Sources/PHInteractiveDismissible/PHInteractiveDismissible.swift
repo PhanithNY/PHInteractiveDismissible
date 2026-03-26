@@ -38,10 +38,11 @@ public extension UIViewController {
 
     viewController._zoomTransitioningDelegate = delegate
     viewController._zoomTransitionSourceView = sourceView
-    if let sourceRect, sourceRect != .zero {
+    if let sourceRect, sourceRect.isValidZoomTransitionSourceRect {
       viewController._zoomTransitionSourceRect = sourceRect
     } else {
-      viewController._zoomTransitionSourceRect = sourceView.convert(sourceView.bounds, to: nil)
+      let fallbackRect = sourceView.convert(sourceView.bounds, to: nil)
+      viewController._zoomTransitionSourceRect = fallbackRect.isValidZoomTransitionSourceRect ? fallbackRect : nil
     }
     viewController.interactiveTransitionManager = delegate
     viewController.transitioningDelegate = delegate
@@ -50,6 +51,19 @@ public extension UIViewController {
     present(viewController, animated: true) {
       completion?()
     }
+  }
+}
+
+private extension CGRect {
+  var isValidZoomTransitionSourceRect: Bool {
+    guard !isNull, !isInfinite, !isEmpty else {
+      return false
+    }
+
+    return origin.x.isFinite
+      && origin.y.isFinite
+      && size.width.isFinite
+      && size.height.isFinite
   }
 }
 

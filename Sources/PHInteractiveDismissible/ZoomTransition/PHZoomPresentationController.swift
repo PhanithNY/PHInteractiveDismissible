@@ -102,4 +102,12 @@ public final class PHZoomPresentationController: UIPresentationController {
     }
     didBeginDismissalAppearanceTransition = false
   }
+
+  public override func containerViewDidLayoutSubviews() {
+    super.containerViewDidLayoutSubviews()
+
+    if let containerView {
+      fadeView.frame = containerView.bounds
+    }
+  }
 }
