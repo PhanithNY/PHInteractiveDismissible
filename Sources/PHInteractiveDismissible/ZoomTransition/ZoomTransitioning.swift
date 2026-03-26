@@ -117,7 +117,7 @@ extension UIViewControllerContextTransitioning {
   private func sourceRect(for controller: UIViewController?,
                           transition: PHZoomTransitioning.Transition) -> CGRect? {
     if let sourceView = controller?.resolvedZoomTransitioning()?.sourceView(for: transition) {
-      return sourceView.convert(sourceView.bounds, to: nil)
+      return sourceView.convert(sourceView.bounds, to: containerView)
     }
 
     if let frame = controller?._zoomTransitionSourceRect {
@@ -132,6 +132,6 @@ extension UIViewControllerContextTransitioning {
       return nil
     }
 
-    return view.bounds
+    return view.convert(view.bounds, to: containerView)
   }
 }

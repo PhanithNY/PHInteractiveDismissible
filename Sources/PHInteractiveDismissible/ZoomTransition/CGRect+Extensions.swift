@@ -20,7 +20,7 @@ extension CGRect {
   
   private func aspectFitWidth(to frame: CGRect) -> CGRect {
     let ratio = width / height
-    let height = frame.width * ratio
+    let height = frame.width / ratio
     let offsetY = (frame.height - height) / 2
     let origin = CGPoint(x: frame.origin.x, y: frame.origin.y + offsetY)
     let size = CGSize(width: frame.width, height: height)
@@ -29,7 +29,7 @@ extension CGRect {
   
   private func aspectFitHeight(to frame: CGRect) -> CGRect {
     let ratio = height / width
-    let width = frame.height * ratio
+    let width = frame.height / ratio
     let offsetX = (frame.width - width) / 2
     let origin = CGPoint(x: frame.origin.x + offsetX, y: frame.origin.y)
     let size = CGSize(width: width, height: frame.height)

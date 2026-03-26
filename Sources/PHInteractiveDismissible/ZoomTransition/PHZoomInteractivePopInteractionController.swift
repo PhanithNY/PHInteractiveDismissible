@@ -586,8 +586,8 @@ extension PHZoomInteractivePopInteractionController {
     sourceViewWasHidden = sourceView.isHidden
     sourceView.isHidden = false
     sourceView.layoutIfNeeded()
-    
-    guard let snapshot = sourceView.snapshotView(afterScreenUpdates: true) else {
+
+    guard let snapshot = sourceView.resizableSnapshotView(from: sourceView.bounds, afterScreenUpdates: true, withCapInsets: .zero) else {
       sourceView.isHidden = sourceViewWasHidden
       transitionContext.completeTransition(false)
       resetInteractionState()
@@ -661,12 +661,6 @@ extension PHZoomInteractivePopInteractionController {
       tx: interpolateValue(from: from.tx, to: to.tx, progress: progress),
       ty: interpolateValue(from: from.ty, to: to.ty, progress: progress)
     )
-  }
-  
-  private func scaleFactor(for transform: CGAffineTransform) -> CGFloat {
-    let scaleX = hypot(transform.a, transform.c)
-    let scaleY = hypot(transform.b, transform.d)
-    return max(scaleX, scaleY)
   }
   
   /// Clamps tx/ty so the view stays within the container during an interactive gesture.
