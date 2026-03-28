@@ -12,7 +12,6 @@ import UIKit
 final class DetailsViewController: UIViewController, InteractiveDismissible, ZoomTransitioning {
 
   var dismissibleScrollView: UIScrollView? { nil }
-  var interactiveTransitionManager: (any UIViewControllerTransitioningDelegate)?
   
   var zoomOption: PHInteractiveDismissible.ZoomOptions? {
     return .init(

@@ -6,24 +6,16 @@
 //
 
 import UIKit
+import PHInteractiveDismissibleObjC
 
-struct CornerRadiusProvider {
-  static var notchCornerRadius: CGFloat {
-    UIScreen.main.displayCornerRadius
+public enum CornerRadiusProvider {
+  public static var deviceCornerRadius: CGFloat {
+    UIScreen.main.deviceCornerRadius
   }
 }
 
 extension UIScreen {
-  public var displayCornerRadius: CGFloat {
-    guard let cornerRadius = self.value(forKey: Self.cornerRadiusKey) as? CGFloat else {
-      return 0
-    }
-    
-    return cornerRadius
+  fileprivate var deviceCornerRadius: CGFloat {
+    CGFloat(truncating: PrivateCornerRadiusReader.displayCornerRadius(for: self) ?? 0)
   }
-  
-  private static let cornerRadiusKey: String = {
-    let components = ["Radius", "Corner", "display", "_"]
-    return components.reversed().joined()
-  }()
 }

@@ -16,7 +16,7 @@ public struct ZoomOptions {
   var dimmingVisualEffect: UIBlurEffect?
   
   public init(duration: TimeInterval,
-              maskCornerRadius: CGFloat = UIScreen.main.displayCornerRadius,
+              maskCornerRadius: CGFloat = CornerRadiusProvider.deviceCornerRadius,
               minimumScale: CGFloat = 0.5,
               maskVisualEffect: UIVisualEffect? = nil,
               dimmingColor: UIColor? = UIColor.black.withAlphaComponent(0.25),

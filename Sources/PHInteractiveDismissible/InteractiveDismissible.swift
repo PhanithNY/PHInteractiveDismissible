@@ -6,6 +6,11 @@
 //
 
 import UIKit
+import ObjectiveC
+
+private enum InteractiveDismissibleAssociatedKeys {
+  static var interactiveTransitionManager: UInt8 = 0
+}
 
 public protocol InteractiveDismissible: UIViewController {
   var dismissibleScrollView: UIScrollView? { get }
@@ -15,12 +20,27 @@ public protocol InteractiveDismissible: UIViewController {
 }
 
 public extension InteractiveDismissible {
+  var interactiveTransitionManager: UIViewControllerTransitioningDelegate? {
+    get {
+      objc_getAssociatedObject(self, &InteractiveDismissibleAssociatedKeys.interactiveTransitionManager) as? UIViewControllerTransitioningDelegate
+    }
+    set {
+      objc_setAssociatedObject(self,
+                               &InteractiveDismissibleAssociatedKeys.interactiveTransitionManager,
+                               newValue,
+                               .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+  }
+
   var dismissibleScrollView: UIScrollView? {
     nil
   }
   
   var preferredCornerRadius: CGFloat? {
-    nil
+    if #available(iOS 26.0, *) {
+      return CornerRadiusProvider.deviceCornerRadius
+    }
+    return nil
   }
   
   func updatePresentationLayout(animated: Bool = false) {
@@ -40,5 +60,15 @@ public extension InteractiveDismissible {
     case false:
       presentationController?.containerView?.layoutIfNeeded()
     }
+  }
+}
+
+extension UINavigationController: InteractiveDismissible {
+  public var dismissibleScrollView: UIScrollView? {
+    (topViewController as? InteractiveDismissible)?.dismissibleScrollView
+  }
+
+  public var preferredCornerRadius: CGFloat? {
+    (topViewController as? InteractiveDismissible)?.preferredCornerRadius
   }
 }

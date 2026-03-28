@@ -251,7 +251,6 @@ extension RootViewController: UICollectionViewDelegate {
 
 final class NonInteractiveController: UIViewController, InteractiveDismissible {
   
-  var interactiveTransitionManager: (any UIViewControllerTransitioningDelegate)?
   var dismissibleScrollView: UIScrollView? { nil }
   
   override func loadView() {

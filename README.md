@@ -1,58 +1,121 @@
 # Welcome to PHInteractiveDismissible!
 
-**PHInteractiveDismissible** allow you to interactively dismiss custom UIViewController.
+**PHInteractiveDismissible** provides two custom presentation styles for UIKit:
 
+- interactive modal dismissal
+- zoom presentation with interactive pan and pinch dismissal
 
-## Usage
-Make your UIViewController conform to **InteractiveDismissible**.
+## Interactive Dismissal
+Make your view controller conform to `InteractiveDismissible`.
 
-``` swift
-final class ChildInteractiveDismissibleListViewController: UIViewController, InteractivePresentable {
-  var transitionManager: UIViewControllerTransitioningDelegate?
-  
-  init() {
-    super.init(nibName: nil, bundle: nil)
-    
-    backButtonEnabled = true
-  }
-  
+```swift
+final class ChildInteractiveDismissibleListViewController: UIViewController, InteractiveDismissible {
   required init?(coder: NSCoder) {
     fatalError()
   }
-  
-  override func loadView() {
-    super.loadView()
-    
+
+  override func viewDidLoad() {
+    super.viewDidLoad()
+
+    backButtonEnabled = true
     title = "Child"
-    view.backgroundColor = .background
-   
+    view.backgroundColor = .systemBackground
+
     if backButtonEnabled {
-      if #available(iOS 13.0, *) {
-        navigationItem.leftBarButtonItem = .init(image: UIImage(systemName: "chevron.left"), style: .plain, target: self, action: #selector(_dismiss))
-        navigationItem.rightBarButtonItem = .init(title: "Push", style: .plain, target: self, action: #selector(pushNext))
-      }
+      navigationItem.leftBarButtonItem = .init(
+        image: UIImage(systemName: "chevron.left"),
+        style: .plain,
+        target: self,
+        action: #selector(dismissSelf)
+      )
+      navigationItem.rightBarButtonItem = .init(
+        title: "Push",
+        style: .plain,
+        target: self,
+        action: #selector(pushNext)
+      )
     }
   }
-  
+
   @objc
-  private func _dismiss() {
-    self.dismiss(animated: true)
+  private func dismissSelf() {
+    dismiss(animated: true)
   }
-  
+
   @objc
   private func pushNext() {
-    let viewController = SecondViewController()
-    navigationController?.pushViewController(viewController, animated: true)
+    navigationController?.pushViewController(SecondViewController(), animated: true)
   }
 }
 ```
 
-And present it like:
-``` swift 
+Present it with the built-in custom transition:
+
+```swift
 let viewController = ChildInteractiveDismissibleListViewController()
-let navigationController: UINavigationController = .init(rootViewController: viewController)
+let navigationController = UINavigationController(rootViewController: viewController)
 present(navigationController, dismissalType: .interactive, animated: true)
 ```
+
+`UINavigationController` already conforms to `InteractiveDismissible`, so wrapping your screen in a navigation controller works out of the box.
+
+## Zoom Transition
+For zoom presentation, make the destination conform to both `InteractiveDismissible` and `ZoomTransitioning`.
+
+```swift
+final class DetailsViewController: UIViewController, InteractiveDismissible, ZoomTransitioning {
+  var zoomOption: ZoomOptions? {
+    .init(
+      duration: 0.35,
+      maskVisualEffect: UIBlurEffect(style: .systemThickMaterial),
+      dimmingColor: nil,
+      dimmingVisualEffect: nil
+    )
+  }
+}
+```
+
+If you already have a concrete source view, present like this:
+
+```swift
+let detailsViewController = DetailsViewController()
+let navigationController = UINavigationController(rootViewController: detailsViewController)
+
+zoom(to: navigationController, from: sender)
+```
+
+If your source view may change over time, such as a reusable collection view cell, use `sourceViewProvider`:
+
+```swift
+let detailsViewController = DetailsViewController()
+let navigationController = UINavigationController(rootViewController: detailsViewController)
+
+zoom(
+  to: navigationController,
+  sourceViewProvider: { [weak self] in
+    self?.selectedCell?.iconContainerView
+  }
+)
+```
+
+You can also provide a custom source rect:
+
+```swift
+zoom(
+  to: navigationController,
+  from: sender,
+  sourceRect: sender.bounds.insetBy(dx: 8, dy: 8)
+)
+```
+
+`ZoomOptions` currently supports:
+
+- `duration`
+- `maskCornerRadius`
+- `minimumScale`
+- `maskVisualEffect`
+- `dimmingColor`
+- `dimmingVisualEffect`
 
 ## Installation
 From Xcode menu bar:
