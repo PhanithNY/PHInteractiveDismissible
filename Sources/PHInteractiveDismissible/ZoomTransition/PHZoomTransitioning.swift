@@ -225,16 +225,17 @@ extension PHZoomTransitioning {
     let resolvedSourceView = context.sourceView(forKey: .from, transition: transition)
       ?? context.sourceView(forKey: .to, transition: transition)
     
-    if let resolvedSourceView,
-       let snapshot = makeSnapshot(from: resolvedSourceView) {
-      baseSnapshot = snapshot
-    } else if let sourceView {
+    if let sourceView {
       baseSnapshot = sourceView
+    } else if let resolvedSourceView, let snapshot = makeSnapshot(from: resolvedSourceView) {
+      baseSnapshot = snapshot
     } else {
       context.completeTransition(false)
       return
     }
     
+    let finalCornerRadius = resolvedSourceView?.layer.cornerRadius ?? baseSnapshot.layer.cornerRadius
+
     let snapshot = baseSnapshot.then {
       $0.alpha = 0.0
       $0.frame = fromFrame
@@ -302,11 +303,11 @@ extension PHZoomTransitioning {
     ) {
       fromView.transform = result.transform
       mask.frame = maskFrame
-      mask.layer.cornerRadius = snapshot.layer.cornerRadius / result.scaleFactor
+      mask.layer.cornerRadius = finalCornerRadius / result.scaleFactor
       overlay.layer.opacity = 0
       dimmingView.effect = nil
       snapshot.frame = maskFrame
-      snapshot.layer.cornerRadius = 0
+      snapshot.layer.cornerRadius = finalCornerRadius / result.scaleFactor
       blurView.contentView.backgroundColor = snapshot.backgroundColor
       blurView.alpha = 1.0
       
@@ -355,6 +356,9 @@ extension PHZoomTransitioning {
     sourceView.layoutIfNeeded()
     let snapshot = sourceView.resizableSnapshotView(from: sourceView.bounds, afterScreenUpdates: true, withCapInsets: .zero)//sourceView.snapshotView(afterScreenUpdates: true)
     sourceView.isHidden = sourceViewWasHidden
+    snapshot?.layer.cornerRadius = sourceView.layer.cornerRadius
+    snapshot?.layer.cornerCurve = sourceView.layer.cornerCurve
+    snapshot?.layer.masksToBounds = sourceView.layer.masksToBounds || sourceView.clipsToBounds || sourceView.layer.cornerRadius > 0
     return snapshot
   }
   
