@@ -10,6 +10,8 @@ import UIKit
 public final class InteractivePopInteractionController: NSObject, InteractiveTransitioning {
   
   public var interactionInProgress = false
+  /// Optional gate set by the `present(_:dismissalType:)` caller. Takes precedence over the protocol property.
+  public var interactiveDismissShouldBegin: (() -> Bool)?
   private weak var viewController: InteractiveDismissible!
   private weak var transitionContext: UIViewControllerContextTransitioning?
   
@@ -279,6 +281,11 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
 
 extension InteractivePopInteractionController: UIGestureRecognizerDelegate {
   public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    let shouldBeginGate = interactiveDismissShouldBegin ?? viewController.interactiveDismissShouldBegin
+    if let shouldBegin = shouldBeginGate, !shouldBegin() {
+      return false
+    }
+
     if let navigationController = viewController as? UINavigationController,
        navigationController.viewControllers.count > 1 {
       return false

@@ -12,7 +12,16 @@ import UIKit
 final class DetailsViewController: UIViewController, InteractiveDismissible, ZoomTransitioning {
 
   var dismissibleScrollView: UIScrollView? { nil }
-  
+
+  var interactiveDismissGestureShouldBegin: (() -> Bool)? {
+    { [weak self] in
+      if let viewControllers = self?.navigationController?.viewControllers {
+        return viewControllers.count.isMultiple(of: 2)
+      }
+      return false
+    }
+  }
+
   var zoomOption: PHInteractiveDismissible.ZoomOptions? {
     return .init(
       duration: 0.35,

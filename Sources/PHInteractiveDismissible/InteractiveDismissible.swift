@@ -16,6 +16,10 @@ public protocol InteractiveDismissible: UIViewController {
   var dismissibleScrollView: UIScrollView? { get }
   var interactiveTransitionManager: UIViewControllerTransitioningDelegate? { get set }
   var preferredCornerRadius: CGFloat? { get }
+  /// Return `false` to prevent the interactive dismiss gesture from starting.
+  /// Return `true` (or leave `nil`) to allow it as normal.
+  /// Use this to block dismissal during sensitive flows, e.g. PIN verification.
+  var interactiveDismissShouldBegin: (() -> Bool)? { get }
   func updatePresentationLayout(animated: Bool)
 }
 
@@ -33,6 +37,10 @@ public extension InteractiveDismissible {
   }
 
   var dismissibleScrollView: UIScrollView? {
+    nil
+  }
+
+  var interactiveDismissShouldBegin: (() -> Bool)? {
     nil
   }
   
@@ -70,5 +78,9 @@ extension UINavigationController: InteractiveDismissible {
 
   public var preferredCornerRadius: CGFloat? {
     (topViewController as? InteractiveDismissible)?.preferredCornerRadius
+  }
+
+  public var interactiveDismissShouldBegin: (() -> Bool)? {
+    (topViewController as? InteractiveDismissible)?.interactiveDismissShouldBegin
   }
 }

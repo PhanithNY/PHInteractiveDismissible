@@ -8,15 +8,18 @@ public extension UIViewController {
   final func present(_ viewController: InteractiveDismissible,
                dismissalType: InteractiveDismissalType,
                animated: Bool = true,
+               dismissShouldBegin: (() -> Bool)? = nil,
                completion: (() -> Void)? = nil) {
-    
+
     let interactionController: InteractiveTransitioning?
     switch dismissalType {
     case .none:
       interactionController = nil
-      
+
     case .interactive:
-      interactionController = InteractivePopInteractionController(viewController: viewController)
+      let controller = InteractivePopInteractionController(viewController: viewController)
+      controller.interactiveDismissShouldBegin = dismissShouldBegin
+      interactionController = controller
     }
     
     let transitionManager = PHModalTransitionManager(interactionController: interactionController)
@@ -32,12 +35,14 @@ public extension UIViewController {
             from sourceView: UIView,
             sourceRect: CGRect? = nil,
             with presentationStyle: UIModalPresentationStyle = .custom,
+            dismissShouldBegin: (() -> Bool)? = nil,
             completion: (() -> Void)? = nil) {
     zoom(
       to: viewController,
       sourceViewProvider: { sourceView },
       sourceRect: sourceRect,
       with: presentationStyle,
+      dismissShouldBegin: dismissShouldBegin,
       completion: completion
     )
   }
@@ -46,8 +51,10 @@ public extension UIViewController {
             sourceViewProvider: @escaping () -> UIView?,
             sourceRect: CGRect? = nil,
             with presentationStyle: UIModalPresentationStyle = .custom,
+            dismissShouldBegin: (() -> Bool)? = nil,
             completion: (() -> Void)? = nil) {
     let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
+    interactionController.interactiveDismissShouldBegin = dismissShouldBegin
     let delegate = PHZoomTransitioningDelegate(interactionController: interactionController)
 
     viewController._zoomTransitioningDelegate = delegate

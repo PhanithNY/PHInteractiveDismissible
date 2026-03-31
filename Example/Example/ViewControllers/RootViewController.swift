@@ -120,9 +120,7 @@ final class RootViewController: UIViewController, ZoomTransitioning {
     let navigationController = UINavigationController(rootViewController: controller)
     
     if indexPath.item > 0 {
-      zoom(to: navigationController, from: selectedCell.unsafelyUnwrapped.iconContainerView, sourceRect: .zero) {
-        
-      }
+      zoom(to: navigationController, from: selectedCell.unsafelyUnwrapped.iconContainerView)
       return
     }
     

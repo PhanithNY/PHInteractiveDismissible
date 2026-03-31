@@ -14,6 +14,8 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   }
   
   public var interactionInProgress = false
+  /// Optional gate set by the `zoom()` caller. Takes precedence over the protocol property.
+  public var interactiveDismissShouldBegin: (() -> Bool)?
   private weak var viewController: (InteractiveDismissible & ZoomTransitioning)!
   private weak var transitionContext: UIViewControllerContextTransitioning?
   
@@ -463,6 +465,11 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
 
 extension PHZoomInteractivePopInteractionController: UIGestureRecognizerDelegate {
   public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    let shouldBeginGate = interactiveDismissShouldBegin ?? viewController.interactiveDismissShouldBegin
+    if let shouldBegin = shouldBeginGate, !shouldBegin() {
+      return false
+    }
+
     if let navigationController = viewController as? UINavigationController,
        navigationController.viewControllers.count > 1 {
       return false
