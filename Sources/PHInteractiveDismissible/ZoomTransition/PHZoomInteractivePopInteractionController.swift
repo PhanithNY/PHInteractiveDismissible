@@ -350,7 +350,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
 
     UIView.springAnimate(
       springDuration: zoomOption?.duration ?? 0.35,
-      bounce: 0.0,
+      bounce: 0.12,
       initialSpringVelocity: 10.0,
       delay: 0.0,
       options: [.curveEaseInOut]) {
@@ -729,11 +729,14 @@ extension PHZoomInteractivePopInteractionController {
                              ty: translationY)
   }
   
-  /// Adds increasing resistance as the dismissal progresses so the drag feels heavier.
+  /// Rubber-band resistance: near 1:1 at the start, progressively heavier as the view is pulled further.
+  /// The classic formula `d * (1 - 1 / (c*x/d + 1))` gives a natural spring-like stretch —
+  /// the view loads up with tension the farther it travels, rather than sliding with a flat multiplier.
   private func weightedTranslation(_ translation: CGFloat, progress: CGFloat) -> CGFloat {
-    let clampedProgress = max(0.0, min(1.0, progress))
-    let resistance = max(0.4, 0.72 - (clampedProgress * 0.22))
-    return translation * resistance
+    guard interactionDistance > 0 else { return translation * 0.55 }
+    let c: CGFloat = 0.82   // tension coefficient — lower = stiffer spring
+    let d = interactionDistance
+    return d * (1.0 - 1.0 / (c * translation / d + 1.0))
   }
   
   /// Vertical motion should feel slightly damped so the card keeps some mass.
