@@ -12,13 +12,13 @@ import UIKit
 final class DetailsViewController: UIViewController, InteractiveDismissible, ZoomTransitioning {
 
   var dismissibleScrollView: UIScrollView? { nil }
-
-  var interactiveDismissGestureShouldBegin: (() -> Bool)? {
+  
+  var interactiveDismissShouldBegin: (() -> Bool)? {
     { [weak self] in
       if let viewControllers = self?.navigationController?.viewControllers {
-        return viewControllers.count.isMultiple(of: 2)
+        return viewControllers.count == 1
       }
-      return false
+      return true
     }
   }
 
