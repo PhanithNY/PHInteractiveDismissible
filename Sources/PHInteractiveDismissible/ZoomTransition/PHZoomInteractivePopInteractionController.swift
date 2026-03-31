@@ -98,13 +98,17 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   
   @objc
   private func handleGesture(_ gestureRecognizer: UIPanGestureRecognizer) {
-    guard let superview = gestureRecognizer.view?.superview else {
+    // Use the superview of the animated view as the reference — it is never transformed,
+    // so translation(in:) always returns stable screen-space values regardless of whether
+    // the gesture is attached to the main view or the dismissibleScrollView.
+    let vcView = (viewController as? UINavigationController)?.view ?? viewController?.view
+    guard let referenceView = vcView?.superview ?? gestureRecognizer.view?.superview else {
       return
     }
-    
-    let translation = gestureRecognizer.translation(in: superview).x
-    let translationY = gestureRecognizer.translation(in: superview).y
-    let velocity = gestureRecognizer.velocity(in: superview).x
+
+    let translation = gestureRecognizer.translation(in: referenceView).x
+    let translationY = gestureRecognizer.translation(in: referenceView).y
+    let velocity = gestureRecognizer.velocity(in: referenceView).x
     
     switch gestureRecognizer.state {
     case .began:
@@ -126,13 +130,14 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   
   @objc
   private func handlePinchGesture(_ gestureRecognizer: UIPinchGestureRecognizer) {
-    guard let superview = gestureRecognizer.view?.superview else {
+    let vcView = (viewController as? UINavigationController)?.view ?? viewController?.view
+    guard let referenceView = vcView?.superview ?? gestureRecognizer.view?.superview else {
       return
     }
 
-    let location = gestureRecognizer.location(in: superview)
+    let location = gestureRecognizer.location(in: referenceView)
     let progress = max(0.0, min(1.0, (1.0 - gestureRecognizer.scale) / 0.62))
-    let translationY = weightedPinchVerticalTranslation((location.y - superview.bounds.midY) * progress * 0.18)
+    let translationY = weightedPinchVerticalTranslation((location.y - referenceView.bounds.midY) * progress * 0.18)
     let pinchScale = resistedPinchScale(for: gestureRecognizer.scale)
 
     switch gestureRecognizer.state {
@@ -146,7 +151,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
       guard interactionDriver == .pinch else { return }
       let rotationAngle = updatePinchRotationAngle(location: location,
                                                    progress: progress,
-                                                   containerWidth: superview.bounds.width)
+                                                   containerWidth: referenceView.bounds.width)
       pinchChanged(progress: weightedPinchProgress(progress),
                    translationY: translationY,
                    rotationAngle: rotationAngle,

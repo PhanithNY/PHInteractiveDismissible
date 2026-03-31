@@ -11,7 +11,7 @@ import UIKit
 
 final class DetailsViewController: UIViewController, InteractiveDismissible, ZoomTransitioning {
 
-  var dismissibleScrollView: UIScrollView? { nil }
+  var dismissibleScrollView: UIScrollView? { tableView }
   
   var interactiveDismissShouldBegin: (() -> Bool)? {
     { [weak self] in
