@@ -45,11 +45,30 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   private var shadowFinalFrame: CGRect = .zero
   private var interactionDriver: InteractionDriver?
   private var initialPinchLocation: CGPoint?
-  private var pinchRotationAngle: CGFloat = 0.0
-  private let pinchRotationMultiplier: CGFloat = 1.35
+  /// Reference to the rotation gesture recognizer so the pinch handler can read its cumulative
+  /// `.rotation` value when computing the card's rotation. Two-finger twist is the natural way
+  /// to detect rotation; the previous hand-rolled approach mapped horizontal pinch midpoint
+  /// displacement to an angle, which conflated translation with rotation.
+  private weak var rotationGestureRecognizer: UIRotationGestureRecognizer?
+  /// Amplification factor on top of the user's actual finger twist. 1.0 = card matches finger
+  /// rotation 1:1, higher values exaggerate.
+  private let pinchRotationMultiplier: CGFloat = 1.0
+  /// Smoothed rotation angle. Each `.changed` event eases toward the gesture's raw rotation
+  /// (× multiplier) by at most `maxFrameDelta` radians, so finger jitter doesn't translate
+  /// into visible micro-snaps on the card.
+  private var smoothedRotationAngle: CGFloat = 0
+  /// Rotation gesture's `.rotation` value captured at pinch `.began`. Subtracted from the
+  /// current value so the card only sees rotation that happened *during* the pinch — without
+  /// this, a user who twists before starting to pinch would see the card jump to the
+  /// pre-pinch angle when pinch begins.
+  private var rotationBaselineAtPinchBegin: CGFloat = 0
   /// Y position (in container coords) where the pan gesture began. Used as the scale pivot so
   /// the card visually anchors at the touch point instead of the geometric center.
   private var panAnchorY: CGFloat = 0
+  /// EMA-smoothed pinch midpoint. Raw `gestureRecognizer.location(in:)` jitters because the
+  /// centroid wobbles with sub-pixel finger movement; smoothing it strips the high-frequency
+  /// noise so the card's translation reads as fluid finger-following instead of jittery snap.
+  private var smoothedPinchLocation: CGPoint?
   
   // MARK: - Init
   
@@ -76,7 +95,12 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     let pinchGesture = UIPinchGestureRecognizer(target: self, action: #selector(handlePinchGesture(_:)))
     pinchGesture.delegate = self
     view.addGestureRecognizer(pinchGesture)
-    
+
+    let rotationGesture = UIRotationGestureRecognizer(target: self, action: #selector(handleRotationGesture(_:)))
+    rotationGesture.delegate = self
+    view.addGestureRecognizer(rotationGesture)
+    rotationGestureRecognizer = rotationGesture
+
     if let navigationController = viewController as? UINavigationController,
        let popGesture = navigationController.interactivePopGestureRecognizer {
       popGesture.require(toFail: gesture)
@@ -141,41 +165,92 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
 
     let location = gestureRecognizer.location(in: referenceView)
     let progress = max(0.0, min(1.0, (1.0 - gestureRecognizer.scale) / 0.62))
-    let translationY = weightedPinchVerticalTranslation((location.y - referenceView.bounds.midY) * progress * 0.18)
     let pinchScale = resistedPinchScale(for: gestureRecognizer.scale)
 
     switch gestureRecognizer.state {
     case .began:
       guard gestureRecognizer.velocity < 0 else { return }
+      guard gestureRecognizer.numberOfTouches >= 2 else { return }
       initialPinchLocation = location
-      pinchRotationAngle = 0.0
+      smoothedPinchLocation = location
+      smoothedRotationAngle = 0
+      rotationBaselineAtPinchBegin = rotationGestureRecognizer?.rotation ?? 0
       gestureBegan(driver: .pinch)
 
     case .changed:
       guard interactionDriver == .pinch else { return }
-      let rotationAngle = updatePinchRotationAngle(location: location,
-                                                   progress: progress,
-                                                   containerWidth: referenceView.bounds.width)
+      // If a finger lifts mid-pinch we commit or cancel right away based on current state.
+      // UIKit will eventually fire `.ended` when touches drop below two, but reacting here
+      // keeps the dismissal responsive instead of waiting an extra event.
+      if gestureRecognizer.numberOfTouches < 2 {
+        interactionDriver = nil
+        initialPinchLocation = nil
+        smoothedPinchLocation = nil
+        pinchEnded(progress: progress, velocity: gestureRecognizer.velocity)
+        return
+      }
+
+      // EMA-smooth the centroid: blend the new sample 40% over the previous smoothed value.
+      // Lower alpha = more smoothing (more lag); 0.4 is a sweet spot that removes the visible
+      // wobble without making the card feel sluggish behind the fingers.
+      let smoothingAlpha: CGFloat = 0.4
+      let prevSmoothed = smoothedPinchLocation
+      let smoothed: CGPoint
+      if let prev = prevSmoothed {
+        smoothed = CGPoint(x: prev.x * (1 - smoothingAlpha) + location.x * smoothingAlpha,
+                           y: prev.y * (1 - smoothingAlpha) + location.y * smoothingAlpha)
+      } else {
+        smoothed = location
+      }
+      smoothedPinchLocation = smoothed
+
+      // Rotation comes directly from the dedicated UIRotationGestureRecognizer — it reads the
+      // actual two-finger twist in radians. Multiplied by `pinchRotationMultiplier` to amplify
+      // the visible tilt vs. the real finger rotation, then clamped to a sane max.
+      // Smooth rotation: ease toward the gesture's current rotation by at most ~3° per frame.
+      // Removes finger jitter and any transient jumps without adding visible lag for slow twists.
+      // Subtract the pre-pinch baseline so we only see rotation that accumulated *during* this
+      // pinch — otherwise a twist before pinching would show as a sudden card rotation at start.
+      let rawRotation = (rotationGestureRecognizer?.rotation ?? 0) - rotationBaselineAtPinchBegin
+      let target = rawRotation * pinchRotationMultiplier
+      let maxFrameDelta: CGFloat = .pi / 60
+      let delta = target - smoothedRotationAngle
+      let clampedDelta = max(-maxFrameDelta, min(maxFrameDelta, delta))
+      smoothedRotationAngle += clampedDelta
+      let rotationAngle = smoothedRotationAngle
+
+      let driftX = smoothed.x - (initialPinchLocation?.x ?? smoothed.x)
+      let driftY = smoothed.y - (initialPinchLocation?.y ?? smoothed.y)
       pinchChanged(progress: weightedPinchProgress(progress),
-                   translationY: translationY,
+                   translationX: driftX,
+                   translationY: driftY,
                    rotationAngle: rotationAngle,
                    pinchScale: pinchScale)
 
     case .cancelled:
       guard interactionDriver == .pinch else { return }
       initialPinchLocation = nil
+      smoothedPinchLocation = nil
       pinchCancelled(scale: gestureRecognizer.scale, velocity: gestureRecognizer.velocity)
 
     case .ended:
       guard interactionDriver == .pinch else { return }
       initialPinchLocation = nil
+      smoothedPinchLocation = nil
       pinchEnded(progress: progress, velocity: gestureRecognizer.velocity)
 
     default:
       break
     }
   }
-  
+
+  @objc
+  private func handleRotationGesture(_ gestureRecognizer: UIRotationGestureRecognizer) {
+    // The cumulative `.rotation` value is read inside the pinch `.changed` handler. This target
+    // exists only so UIKit registers the gesture as active; the pinch handler fires often
+    // enough during multi-touch to keep the card's rotation in sync.
+  }
+
   private func gestureBegan(driver: InteractionDriver) {
     disableOtherTouches()
     
@@ -237,12 +312,12 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     }
   }
 
-  private func pinchChanged(progress: CGFloat, translationY: CGFloat, rotationAngle: CGFloat, pinchScale: CGFloat) {
+  private func pinchChanged(progress: CGFloat, translationX: CGFloat, translationY: CGFloat, rotationAngle: CGFloat, pinchScale: CGFloat) {
     guard transitionContext != nil else {
       return
     }
     update(progress: progress,
-           translation: 0.0,
+           translation: translationX,
            translationY: translationY,
            rotationAngle: rotationAngle,
            additionalScale: pinchScale)
@@ -316,15 +391,18 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     let minimumScale = zoomOption?.minimumScale ?? 0.5
     let weightedTranslationX = weightedTranslation(translation, progress: progress)
     let weightedTranslationY = weightedVerticalTranslation(translationY)
-    // Drive scale from visible motion (post rubber-band) instead of raw gesture progress.
-    // Raw progress reaches 1.0 at full pan but the card itself only travels ~45% of the screen
-    // due to the rubber-band, so the scale would race ahead of where the card visibly is.
-    // Normalizing against the rubber-band's max output keeps scale 1:1 with gesture distance —
-    // and because the rubber-band's slope changes with travel, fast pans naturally produce
-    // fast scale changes, locking scale to gesture speed too.
-    let maxVisibleTranslation = weightedTranslation(interactionDistance, progress: 1.0)
-    let visualProgress = max(0.0, min(1.0, weightedTranslationX / max(maxVisibleTranslation, 1)))
-    let weightedProgress = weightedScaleProgress(visualProgress)
+    // Pan drives scale from visible motion (post rubber-band) so the shrink stays 1:1 with
+    // gesture distance. Pinch has no horizontal translation, so we use its own pre-eased
+    // `progress` directly — otherwise the resultTransform interpolation would be zero and
+    // the card would only shrink via `additionalScale` (which floors at ~0.62).
+    let scaleProgress: CGFloat
+    if interactionDriver == .pinch {
+      scaleProgress = max(0.0, min(1.0, progress))
+    } else {
+      let maxVisibleTranslation = weightedTranslation(interactionDistance, progress: 1.0)
+      scaleProgress = max(0.0, min(1.0, weightedTranslationX / max(maxVisibleTranslation, 1)))
+    }
+    let weightedProgress = weightedScaleProgress(scaleProgress)
     var transform = interactiveTransform(progress: weightedProgress,
                                          translationX: weightedTranslationX,
                                          translationY: weightedTranslationY,
@@ -342,6 +420,19 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     }
     transform = transform.scaledBy(x: additionalScale, y: additionalScale)
     transform = transform.rotated(by: rotationAngle)
+    // Pinch tracking: override tx/ty so the card follows the pinch midpoint and the originally
+    // touched card-point stays pinned under the fingers. Formula: tx/ty = drift + (P - C) − T·(P - C),
+    // where drift is the pinch midpoint's movement, P is the initial pinch location, C is the
+    // card center, and T is the matrix part of the current transform (handles scale + rotation
+    // correctly). For pan we leave the existing pan-anchor logic alone.
+    if interactionDriver == .pinch, let initialPinchLocation {
+      let pivotOffsetX = initialPinchLocation.x - initialMaskFrame.midX
+      let pivotOffsetY = initialPinchLocation.y - initialMaskFrame.midY
+      let rotatedScaledPivotX = transform.a * pivotOffsetX + transform.c * pivotOffsetY
+      let rotatedScaledPivotY = transform.b * pivotOffsetX + transform.d * pivotOffsetY
+      transform.tx = translation + pivotOffsetX - rotatedScaledPivotX
+      transform.ty = translationY + pivotOffsetY - rotatedScaledPivotY
+    }
     fromView.transform = transform
 
     if let shadowView {
@@ -487,7 +578,6 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     interruptedTranslation = 0
     interactionDriver = nil
     initialPinchLocation = nil
-    pinchRotationAngle = 0.0
     enableOtherTouches()
   }
 }
@@ -506,8 +596,19 @@ extension PHZoomInteractivePopInteractionController: UIGestureRecognizerDelegate
       return false
     }
 
-    if gestureRecognizer is UIPinchGestureRecognizer {
+    if let pinchGestureRecognizer = gestureRecognizer as? UIPinchGestureRecognizer {
+      // Require at least two active touches before pinch can begin. UIPinchGestureRecognizer
+      // defaults to two touches, but the explicit guard documents intent and protects against
+      // any subclass/override that loosens the requirement.
+      guard pinchGestureRecognizer.numberOfTouches >= 2 else { return false }
       return !interactionInProgress
+    }
+
+    if gestureRecognizer is UIRotationGestureRecognizer {
+      // Always allow rotation to begin. It doesn't drive the dismissal on its own — the pinch
+      // handler reads its `.rotation` value — but pinch sets `interactionInProgress = true`
+      // before rotation can start, so gating on it here would block rotation entirely.
+      return true
     }
 
     if let panGestureRecognizer = gestureRecognizer as? UIPanGestureRecognizer {
@@ -522,8 +623,18 @@ extension PHZoomInteractivePopInteractionController: UIGestureRecognizerDelegate
     if let scrollView = viewController.dismissibleScrollView {
       return scrollView.contentOffset.x <= 0
     }
-    
+
     return true
+  }
+
+  /// Allow the rotation gesture and pinch gesture to recognize together — they need to be
+  /// concurrent so a two-finger twist + scale produces both effects at once. All other pairs
+  /// keep UIKit's default mutual exclusion.
+  public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                                shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+    let isPinch = gestureRecognizer is UIPinchGestureRecognizer || otherGestureRecognizer is UIPinchGestureRecognizer
+    let isRotation = gestureRecognizer is UIRotationGestureRecognizer || otherGestureRecognizer is UIRotationGestureRecognizer
+    return isPinch && isRotation
   }
 }
 
@@ -796,39 +907,21 @@ extension PHZoomInteractivePopInteractionController {
     return pow(clampedProgress, 1.52)
   }
 
-  private func weightedPinchRotationProgress(_ progress: CGFloat) -> CGFloat {
-    let clampedProgress = max(0.0, min(1.0, progress))
-    return pow(clampedProgress, 1.18)
-  }
-
   private func weightedPinchProgress(_ progress: CGFloat) -> CGFloat {
     let clampedProgress = max(0.0, min(1.0, progress))
     return pow(clampedProgress, 2.08)
   }
 
-  private func weightedPinchVerticalTranslation(_ translation: CGFloat) -> CGFloat {
-    translation * 0.24
-  }
-
-  private func updatePinchRotationAngle(location: CGPoint, progress: CGFloat, containerWidth: CGFloat) -> CGFloat {
-    guard let initialPinchLocation else {
-      return pinchRotationAngle
-    }
-
-    let deltaX = location.x - initialPinchLocation.x
-    let normalizedDeltaX = deltaX / max(containerWidth / 2.0, 1.0)
-    let rotationProgress = max(0.22, weightedPinchRotationProgress(progress))
-    let incrementalRotation = -normalizedDeltaX * (.pi / 5.5) * rotationProgress * pinchRotationMultiplier
-    let maxRotation = (.pi / 6.8)
-    pinchRotationAngle = max(-maxRotation, min(maxRotation, incrementalRotation))
-    return pinchRotationAngle
-  }
-
+  /// Rubber-band resistance for the pinch additional scale. Same shape as horizontal pan:
+  /// initial slope `c` (responsive at small pinches) and asymptote at `1 - maxAmount` (no hard
+  /// floor — pinching harder yields progressively less shrink, never snapping). With c=1.5 and
+  /// maxAmount=0.85: scale 0.95 → ~0.93, 0.7 → ~0.71, 0.5 → ~0.60, 0.2 → ~0.50, ∞ → 0.15.
   private func resistedPinchScale(for scale: CGFloat) -> CGFloat {
-    let clampedScale = max(0.62, min(1.0, scale))
-    let normalized = (1.0 - clampedScale) / 0.38
-    let resistedProgress = pow(max(0.0, min(1.0, normalized)), 2.35)
-    return 1.0 - (resistedProgress * 0.38)
+    let pinchAmount = max(0.0, 1.0 - scale)
+    let c: CGFloat = 1.5
+    let maxAmount: CGFloat = 0.85
+    let resisted = maxAmount * (1.0 - 1.0 / (c * pinchAmount / maxAmount + 1.0))
+    return 1.0 - resisted
   }
   
   private func cleanUpTransitionViews() {
