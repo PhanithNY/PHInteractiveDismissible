@@ -47,6 +47,9 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   private var initialPinchLocation: CGPoint?
   private var pinchRotationAngle: CGFloat = 0.0
   private let pinchRotationMultiplier: CGFloat = 1.35
+  /// Y position (in container coords) where the pan gesture began. Used as the scale pivot so
+  /// the card visually anchors at the touch point instead of the geometric center.
+  private var panAnchorY: CGFloat = 0
   
   // MARK: - Init
   
@@ -112,8 +115,9 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     
     switch gestureRecognizer.state {
     case .began:
+      panAnchorY = gestureRecognizer.location(in: referenceView).y
       gestureBegan(driver: .pan)
-      
+
     case .changed:
       gestureChanged(translation: translation + interruptedTranslation, velocity: velocity, translationY: translationY)
       
@@ -196,6 +200,10 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     }
     var progress = interactionDistance == 0 ? 0 : (translation / interactionDistance)
     progress = max(0, min(1, progress))
+    // Pass vertical drift through with rubber-band damping (see `weightedVerticalTranslation`).
+    // The scale pivot still locks to `panAnchorY`, so the card scales from the touch point and
+    // springs up/down on top of that — a free pull, not free drift, since the resistance grows
+    // with travel.
     update(progress: progress,
            translation: translation,
            translationY: translationY,
@@ -314,6 +322,16 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
                                          translationY: weightedTranslationY,
                                          minimumScale: minimumScale)
     transform = clampedTranslation(transform, in: transitionContext.containerView.bounds, for: fromView.bounds)
+    // Anchor the scale pivot at the gesture's start Y instead of the view's geometric center.
+    // UIView transforms scale around the layer's center, so a pure scale leaves the card
+    // visually shrinking around the screen middle. Adding `(pivotOffset)·(1-s)` to ty shifts
+    // the view so the original-screen point at `panAnchorY` stays under the touch — the card
+    // appears to scale outward from where the finger first landed, then slide right.
+    if interactionDriver == .pan {
+      let currentScale = hypot(transform.a, transform.c)
+      let pivotOffsetY = panAnchorY - fromView.bounds.midY
+      transform.ty += pivotOffsetY * (1.0 - currentScale)
+    }
     transform = transform.scaledBy(x: additionalScale, y: additionalScale)
     transform = transform.rotated(by: rotationAngle)
     fromView.transform = transform
@@ -751,9 +769,17 @@ extension PHZoomInteractivePopInteractionController {
     return d * (1.0 - 1.0 / (c * translation / d + 1.0))
   }
   
-  /// Vertical motion should feel slightly damped so the card keeps some mass.
+  /// Symmetric rubber-band for vertical drift on top of the pan anchor. Initial slope ~0.48
+  /// (matches the previous linear damping for small drags), then asymptotes to
+  /// `interactionDistance` so big pulls progressively load up like a spring instead of running
+  /// linearly off-screen. Mirrored for negative translation so up and down feel identical.
   private func weightedVerticalTranslation(_ translation: CGFloat) -> CGFloat {
-    translation * 0.48
+    guard interactionDistance > 0 else { return translation * 0.48 }
+    let c: CGFloat = 0.48
+    let d = interactionDistance
+    let absT = abs(translation)
+    let resisted = d * (1.0 - 1.0 / (c * absT / d + 1.0))
+    return translation < 0 ? -resisted : resisted
   }
   
   /// Let scaling lag behind the raw gesture progress a bit to avoid a weightless feel.
