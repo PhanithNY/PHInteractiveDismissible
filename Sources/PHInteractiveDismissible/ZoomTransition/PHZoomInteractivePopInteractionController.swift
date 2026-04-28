@@ -316,7 +316,15 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     let minimumScale = zoomOption?.minimumScale ?? 0.5
     let weightedTranslationX = weightedTranslation(translation, progress: progress)
     let weightedTranslationY = weightedVerticalTranslation(translationY)
-    let weightedProgress = weightedScaleProgress(progress)
+    // Drive scale from visible motion (post rubber-band) instead of raw gesture progress.
+    // Raw progress reaches 1.0 at full pan but the card itself only travels ~45% of the screen
+    // due to the rubber-band, so the scale would race ahead of where the card visibly is.
+    // Normalizing against the rubber-band's max output keeps scale 1:1 with gesture distance —
+    // and because the rubber-band's slope changes with travel, fast pans naturally produce
+    // fast scale changes, locking scale to gesture speed too.
+    let maxVisibleTranslation = weightedTranslation(interactionDistance, progress: 1.0)
+    let visualProgress = max(0.0, min(1.0, weightedTranslationX / max(maxVisibleTranslation, 1)))
+    let weightedProgress = weightedScaleProgress(visualProgress)
     var transform = interactiveTransform(progress: weightedProgress,
                                          translationX: weightedTranslationX,
                                          translationY: weightedTranslationY,
