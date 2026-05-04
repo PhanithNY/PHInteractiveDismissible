@@ -559,14 +559,23 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     return max(-8.0, min(8.0, normalizedVelocity))
   }
   
-  private func disableOtherTouches() {
+  // Exposed at `internal` (rather than `private`) so the regression test for the idempotency
+  // guard can invoke it directly via `@testable import`. Not part of the public surface.
+  internal func disableOtherTouches() {
+    // Idempotent: if we already hold a snapshot of views we disabled, return early. Without this
+    // guard, a re-entry (e.g. a new pan starting during a still-running cancel/finish animation)
+    // would re-snapshot `subviews.filter(\.isUserInteractionEnabled)` — which is now empty
+    // because the originals are still disabled — and clobber the references. The eventual
+    // `enableOtherTouches()` would then restore nothing, leaving subviews stuck disabled and
+    // taps dead while gestures (attached to `viewController.view` itself) keep working.
+    guard disabledInteractionViews.isEmpty else { return }
     disabledInteractionViews = viewController.view.subviews.filter(\.isUserInteractionEnabled)
     disabledInteractionViews.forEach {
       $0.isUserInteractionEnabled = false
     }
   }
-  
-  private func enableOtherTouches() {
+
+  internal func enableOtherTouches() {
     disabledInteractionViews.forEach {
       $0.isUserInteractionEnabled = true
     }
@@ -612,6 +621,11 @@ extension PHZoomInteractivePopInteractionController: UIGestureRecognizerDelegate
     }
 
     if let panGestureRecognizer = gestureRecognizer as? UIPanGestureRecognizer {
+      // Mirror pinch's gating: reject new pans while an interaction is in flight (most often
+      // during the spring-back of a previous cancel/finish). Without this, a pan can re-enter
+      // `gestureBegan` during the cancel animation, point the controller at a stale
+      // transitionContext, and corrupt `disabledInteractionViews` bookkeeping.
+      guard !interactionInProgress else { return false }
       let velocity = panGestureRecognizer.velocity(in: panGestureRecognizer.view)
       let isRightwardPan = velocity.x > 0
       let isPrimarilyHorizontal = abs(velocity.x) > abs(velocity.y)

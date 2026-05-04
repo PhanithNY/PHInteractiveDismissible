@@ -99,6 +99,73 @@ final class PHInteractiveDismissibleTests: XCTestCase {
     XCTAssertFalse(interactionController.gestureRecognizerShouldBegin(pinchGestureRecognizer))
   }
 
+  func testZoomInteractionRejectsPanWhenInteractionInProgress() {
+    let viewController = ZoomTestViewController()
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
+    let panGestureRecognizer = StubPanGestureRecognizer()
+    panGestureRecognizer.stubVelocity = CGPoint(x: 100, y: 0)
+
+    XCTAssertTrue(interactionController.gestureRecognizerShouldBegin(panGestureRecognizer))
+
+    interactionController.interactionInProgress = true
+
+    XCTAssertFalse(interactionController.gestureRecognizerShouldBegin(panGestureRecognizer))
+  }
+
+  func testZoomInteractionDoesNotLeakDisabledStateOnReentry() {
+    let viewController = ZoomTestViewController()
+    viewController.loadViewIfNeeded()
+    let interactiveSubview = UIView()
+    interactiveSubview.isUserInteractionEnabled = true
+    viewController.view.addSubview(interactiveSubview)
+
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
+
+    // First "gesture begin" — snapshot taken, subview disabled.
+    interactionController.disableOtherTouches()
+    XCTAssertFalse(interactiveSubview.isUserInteractionEnabled,
+                   "First disableOtherTouches must capture and disable the subview")
+
+    // Re-entry — simulates a new gesture starting during the previous gesture's cancel/finish
+    // animation. Without the idempotency guard, this re-snapshots `subviews.filter(...)`, which
+    // is now empty (the subview is already disabled), and overwrites the references. The
+    // subsequent `enableOtherTouches()` would then restore nothing.
+    interactionController.disableOtherTouches()
+    XCTAssertFalse(interactiveSubview.isUserInteractionEnabled,
+                   "Re-entrant disableOtherTouches must not lose the snapshot — subview must remain disabled")
+
+    interactionController.enableOtherTouches()
+    XCTAssertTrue(interactiveSubview.isUserInteractionEnabled,
+                  "enableOtherTouches must restore the subview — if it stays disabled, the snapshot was clobbered")
+  }
+
+  func testInteractivePopDoesNotLeakDisabledStateOnReentry() {
+    let viewController = TestDismissibleViewController()
+    viewController.loadViewIfNeeded()
+    let interactiveSubview = UIView()
+    interactiveSubview.isUserInteractionEnabled = true
+    viewController.view.addSubview(interactiveSubview)
+
+    let interactionController = InteractivePopInteractionController(viewController: viewController)
+
+    // First "gesture begin" — snapshot taken, subview disabled.
+    interactionController.disableOtherTouches()
+    XCTAssertFalse(interactiveSubview.isUserInteractionEnabled,
+                   "First disableOtherTouches must capture and disable the subview")
+
+    // Re-entry — simulates a new pan starting mid spring-back via the resumption path. Without
+    // the idempotency guard, this re-snapshots an empty filter (the subview is already
+    // disabled) and overwrites the references; the subsequent `enableOtherTouches()` would
+    // then restore nothing.
+    interactionController.disableOtherTouches()
+    XCTAssertFalse(interactiveSubview.isUserInteractionEnabled,
+                   "Re-entrant disableOtherTouches must not lose the snapshot — subview must remain disabled")
+
+    interactionController.enableOtherTouches()
+    XCTAssertTrue(interactiveSubview.isUserInteractionEnabled,
+                  "enableOtherTouches must restore the subview — if it stays disabled, the snapshot was clobbered")
+  }
+
   func testInteractiveDismissGestureCancelKeepsPresentedViewController() {
     let harness = makeInteractiveDismissHarness()
     let gestureRecognizer = StubPanGestureRecognizer()

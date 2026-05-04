@@ -238,11 +238,18 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
         transitionContext.finishInteractiveTransition()
         transitionContext.completeTransition(true)
         self?.interactionInProgress = false
+        // Symmetric with the `cancel` completion. After a successful dismissal the presented VC
+        // is usually gone, so this is harmless in the common case. The reason to call it is for
+        // VC instances that are re-presented (caches, dependency-injected singletons): without
+        // this, `disableOtherTouches`'s last snapshot stays applied and the next presentation
+        // shows up with dead taps until something else flips `isUserInteractionEnabled` back.
+        self?.enableOtherTouches()
       } else {
         DispatchQueue.main.async {
           transitionContext.finishInteractiveTransition()
           transitionContext.completeTransition(true)
           self?.interactionInProgress = false
+          self?.enableOtherTouches()
         }
       }
     }
@@ -256,14 +263,24 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
     distanceToTravel == 0 ? 0 : gestureVelocity / distanceToTravel
   }
   
-  private func disableOtherTouches() {
+  // Exposed at `internal` (rather than `private`) so the regression test for the idempotency
+  // guard can invoke it directly via `@testable import`. Not part of the public surface.
+  internal func disableOtherTouches() {
+    // Idempotent: if we already hold a snapshot of views we disabled, return early. Without this
+    // guard, a re-entry (a new pan starting mid spring-back via the resumption path —
+    // `cancellationAnimator?.stopAnimation(true)` in `gestureBegan`) would re-snapshot
+    // `subviews.filter(\.isUserInteractionEnabled)` — which is now empty because the originals
+    // are still disabled — and clobber the references. The eventual `enableOtherTouches()`
+    // would then restore nothing, leaving subviews stuck disabled and taps dead while the
+    // pan recognizer (attached to `viewController.view` itself) keeps working.
+    guard disabledInteractionViews.isEmpty else { return }
     disabledInteractionViews = viewController.view.subviews.filter(\.isUserInteractionEnabled)
     disabledInteractionViews.forEach {
       $0.isUserInteractionEnabled = false
     }
   }
-  
-  private func enableOtherTouches() {
+
+  internal func enableOtherTouches() {
     disabledInteractionViews.forEach {
       $0.isUserInteractionEnabled = true
     }
