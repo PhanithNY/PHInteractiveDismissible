@@ -52,6 +52,10 @@ final class DetailsViewController: UIViewController, InteractiveDismissible, Zoo
     $0.dataSource = self
     $0.delegate = self
     $0.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
+
+//    let refreshcontrol = UIRefreshControl()
+//    refreshcontrol.addTarget(self, action: #selector(refresh(_:)), for: .valueChanged)
+//    $0.refreshControl = refreshcontrol
   }
   
   // MARK: - Init / Deinit
@@ -84,6 +88,11 @@ extension DetailsViewController {
   @objc
   private func dismissSelf() {
     dismiss(animated: true)
+  }
+
+  @objc
+  private func refresh(_ refreshControl: UIRefreshControl) {
+    refreshControl.perform(#selector(UIRefreshControl.endRefreshing), with: nil, afterDelay: 2)
   }
 }
 
