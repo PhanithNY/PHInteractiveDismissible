@@ -10,6 +10,8 @@ import UIKit
 public final class InteractivePopInteractionController: NSObject, InteractiveTransitioning {
   
   public var interactionInProgress = false
+  /// Optional gate set by the `present(_:dismissalType:)` caller. Takes precedence over the protocol property.
+  public var interactiveDismissShouldBegin: (() -> Bool)?
   private weak var viewController: InteractiveDismissible!
   private weak var transitionContext: UIViewControllerContextTransitioning?
   
@@ -18,6 +20,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   private var presentedFrame: CGRect?
   private var cancellationAnimator: UIViewPropertyAnimator?
   private var insertedPresentedViewController: Bool = false
+  private var disabledInteractionViews: [UIView] = []
   
   // MARK: - Init
   
@@ -25,8 +28,9 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
     self.viewController = viewController
     super.init()
     
-    if let viewController = (viewController as? UINavigationController)?.topViewController {
-      prepareGestureRecognizer(in: viewController.view)
+    if let navigationController = viewController as? UINavigationController {
+      // Keep the gesture attached even if the navigation stack changes.
+      prepareGestureRecognizer(in: navigationController.view)
     } else {
       prepareGestureRecognizer(in: viewController.view)
     }
@@ -37,9 +41,8 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   }
   
   private func prepareGestureRecognizer(in view: UIView) {
-    let gesture = OneWayPanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
-    gesture.direction = .left
-    gesture.edges = gesture.direction.edges
+    let gesture = UIPanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
+    gesture.delegate = self
     view.addGestureRecognizer(gesture)
     
     if let preferredCornerRadius = viewController.preferredCornerRadius, preferredCornerRadius > 0.0 {
@@ -50,9 +53,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   }
   
   private func resolveScrollViewGestures(_ scrollView: UIScrollView) {
-    let scrollGestureRecognizer = OneWayPanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
-    scrollGestureRecognizer.direction = .left
-    scrollGestureRecognizer.edges = scrollGestureRecognizer.direction.edges
+    let scrollGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
     scrollGestureRecognizer.delegate = self
     
     scrollView.addGestureRecognizer(scrollGestureRecognizer)
@@ -62,7 +63,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   // MARK: - Gesture handling
   
   @objc
-  private func handleGesture(_ gestureRecognizer: OneWayPanGestureRecognizer) {
+  private func handleGesture(_ gestureRecognizer: UIPanGestureRecognizer) {
     guard let superview = gestureRecognizer.view?.superview else {
       return
     }
@@ -99,6 +100,12 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
     if !interactionInProgress {
       interactionInProgress = true
       viewController.dismiss(animated: true)
+      DispatchQueue.main.async { [weak self] in
+        guard let self else { return }
+        if self.transitionContext == nil && self.interactionInProgress {
+          self.resetInteractionState()
+        }
+      }
     }
   }
   
@@ -112,10 +119,18 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   }
   
   private func gestureCancelled(translation: CGFloat, velocity: CGFloat) {
+    if transitionContext == nil {
+      resetInteractionState()
+      return
+    }
     cancel(initialSpringVelocity: springVelocity(distanceToTravel: -translation, gestureVelocity: velocity))
   }
   
   private func gestureEnded(translation: CGFloat, velocity: CGFloat) {
+    if transitionContext == nil {
+      resetInteractionState()
+      return
+    }
     if velocity > 300 || (translation > interactionDistance / 2.0 && velocity > -300) {
       finish(initialSpringVelocity: springVelocity(distanceToTravel: interactionDistance - translation, gestureVelocity: velocity))
     } else {
@@ -223,11 +238,18 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
         transitionContext.finishInteractiveTransition()
         transitionContext.completeTransition(true)
         self?.interactionInProgress = false
+        // Symmetric with the `cancel` completion. After a successful dismissal the presented VC
+        // is usually gone, so this is harmless in the common case. The reason to call it is for
+        // VC instances that are re-presented (caches, dependency-injected singletons): without
+        // this, `disableOtherTouches`'s last snapshot stays applied and the next presentation
+        // shows up with dead taps until something else flips `isUserInteractionEnabled` back.
+        self?.enableOtherTouches()
       } else {
         DispatchQueue.main.async {
           transitionContext.finishInteractiveTransition()
           transitionContext.completeTransition(true)
           self?.interactionInProgress = false
+          self?.enableOtherTouches()
         }
       }
     }
@@ -241,16 +263,34 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
     distanceToTravel == 0 ? 0 : gestureVelocity / distanceToTravel
   }
   
-  private func disableOtherTouches() {
-    viewController.view.subviews.forEach {
+  // Exposed at `internal` (rather than `private`) so the regression test for the idempotency
+  // guard can invoke it directly via `@testable import`. Not part of the public surface.
+  internal func disableOtherTouches() {
+    // Idempotent: if we already hold a snapshot of views we disabled, return early. Without this
+    // guard, a re-entry (a new pan starting mid spring-back via the resumption path —
+    // `cancellationAnimator?.stopAnimation(true)` in `gestureBegan`) would re-snapshot
+    // `subviews.filter(\.isUserInteractionEnabled)` — which is now empty because the originals
+    // are still disabled — and clobber the references. The eventual `enableOtherTouches()`
+    // would then restore nothing, leaving subviews stuck disabled and taps dead while the
+    // pan recognizer (attached to `viewController.view` itself) keeps working.
+    guard disabledInteractionViews.isEmpty else { return }
+    disabledInteractionViews = viewController.view.subviews.filter(\.isUserInteractionEnabled)
+    disabledInteractionViews.forEach {
       $0.isUserInteractionEnabled = false
     }
   }
-  
-  private func enableOtherTouches() {
-    viewController.view.subviews.forEach {
+
+  internal func enableOtherTouches() {
+    disabledInteractionViews.forEach {
       $0.isUserInteractionEnabled = true
     }
+    disabledInteractionViews.removeAll()
+  }
+
+  private func resetInteractionState() {
+    interactionInProgress = false
+    interruptedTranslation = 0
+    enableOtherTouches()
   }
 }
 
@@ -258,9 +298,29 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
 
 extension InteractivePopInteractionController: UIGestureRecognizerDelegate {
   public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    let shouldBeginGate = interactiveDismissShouldBegin ?? viewController.interactiveDismissShouldBegin
+    if let shouldBegin = shouldBeginGate, !shouldBegin() {
+      return false
+    }
+
+    if let navigationController = viewController as? UINavigationController,
+       navigationController.viewControllers.count > 1 {
+      return false
+    }
+
+    if let panGestureRecognizer = gestureRecognizer as? UIPanGestureRecognizer {
+      let velocity = panGestureRecognizer.velocity(in: panGestureRecognizer.view)
+      let isRightwardPan = velocity.x > 0
+      let isPrimarilyHorizontal = abs(velocity.x) > abs(velocity.y)
+      guard isRightwardPan, isPrimarilyHorizontal else {
+        return false
+      }
+    }
+    
     if let scrollView = viewController.dismissibleScrollView {
       return scrollView.contentOffset.x <= 0
     }
+    
     return true
   }
 }

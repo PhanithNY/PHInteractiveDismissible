@@ -6,21 +6,49 @@
 //
 
 import UIKit
+import ObjectiveC
+
+private enum InteractiveDismissibleAssociatedKeys {
+  static var interactiveTransitionManager: UInt8 = 0
+}
 
 public protocol InteractiveDismissible: UIViewController {
   var dismissibleScrollView: UIScrollView? { get }
   var interactiveTransitionManager: UIViewControllerTransitioningDelegate? { get set }
   var preferredCornerRadius: CGFloat? { get }
+  /// Return `false` to prevent the interactive dismiss gesture from starting.
+  /// Return `true` (or leave `nil`) to allow it as normal.
+  /// Use this to block dismissal during sensitive flows, e.g. PIN verification.
+  var interactiveDismissShouldBegin: (() -> Bool)? { get }
   func updatePresentationLayout(animated: Bool)
 }
 
 public extension InteractiveDismissible {
+  var interactiveTransitionManager: UIViewControllerTransitioningDelegate? {
+    get {
+      objc_getAssociatedObject(self, &InteractiveDismissibleAssociatedKeys.interactiveTransitionManager) as? UIViewControllerTransitioningDelegate
+    }
+    set {
+      objc_setAssociatedObject(self,
+                               &InteractiveDismissibleAssociatedKeys.interactiveTransitionManager,
+                               newValue,
+                               .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+  }
+
   var dismissibleScrollView: UIScrollView? {
+    nil
+  }
+
+  var interactiveDismissShouldBegin: (() -> Bool)? {
     nil
   }
   
   var preferredCornerRadius: CGFloat? {
-    nil
+    if #available(iOS 26.0, *) {
+      return CornerRadiusProvider.deviceCornerRadius
+    }
+    return nil
   }
   
   func updatePresentationLayout(animated: Bool = false) {
@@ -40,5 +68,19 @@ public extension InteractiveDismissible {
     case false:
       presentationController?.containerView?.layoutIfNeeded()
     }
+  }
+}
+
+extension UINavigationController: InteractiveDismissible {
+  public var dismissibleScrollView: UIScrollView? {
+    (topViewController as? InteractiveDismissible)?.dismissibleScrollView
+  }
+
+  public var preferredCornerRadius: CGFloat? {
+    (topViewController as? InteractiveDismissible)?.preferredCornerRadius
+  }
+
+  public var interactiveDismissShouldBegin: (() -> Bool)? {
+    (topViewController as? InteractiveDismissible)?.interactiveDismissShouldBegin
   }
 }

@@ -35,7 +35,7 @@ extension PHModalTransitionAnimator: UIViewControllerAnimatedTransitioning {
     transitionContext.containerView.addSubview(presentedViewController.view)
     
     let presentedFrame = transitionContext.finalFrame(for: presentedViewController)
-    let dismissedFrame = CGRect(x: transitionContext.containerView.bounds.width, y: presentedFrame.minX, width: presentedFrame.width, height: presentedFrame.height)
+    let dismissedFrame = CGRect(x: transitionContext.containerView.bounds.width, y: presentedFrame.minY, width: presentedFrame.width, height: presentedFrame.height)
     presentedViewController.view.frame = dismissedFrame
 //    presentedViewController.view.applyObscuredShadow()
     

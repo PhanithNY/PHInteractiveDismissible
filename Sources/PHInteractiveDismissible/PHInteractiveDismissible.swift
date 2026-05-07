@@ -2,20 +2,24 @@
 // https://docs.swift.org/swift-book
 
 import UIKit
+import ObjectiveC
 
 public extension UIViewController {
   final func present(_ viewController: InteractiveDismissible,
                dismissalType: InteractiveDismissalType,
                animated: Bool = true,
+               dismissShouldBegin: (() -> Bool)? = nil,
                completion: (() -> Void)? = nil) {
-    
+
     let interactionController: InteractiveTransitioning?
     switch dismissalType {
     case .none:
       interactionController = nil
-      
+
     case .interactive:
-      interactionController = InteractivePopInteractionController(viewController: viewController)
+      let controller = InteractivePopInteractionController(viewController: viewController)
+      controller.interactiveDismissShouldBegin = dismissShouldBegin
+      interactionController = controller
     }
     
     let transitionManager = PHModalTransitionManager(interactionController: interactionController)
@@ -26,19 +30,141 @@ public extension UIViewController {
       completion?()
     }
   }
+
+  func zoom(to viewController: InteractiveDismissible & ZoomTransitioning,
+            from sourceView: UIView,
+            sourceRect: CGRect? = nil,
+            with presentationStyle: UIModalPresentationStyle = .custom,
+            dismissShouldBegin: (() -> Bool)? = nil,
+            completion: (() -> Void)? = nil) {
+    zoom(
+      to: viewController,
+      sourceViewProvider: { sourceView },
+      sourceRect: sourceRect,
+      with: presentationStyle,
+      dismissShouldBegin: dismissShouldBegin,
+      completion: completion
+    )
+  }
+
+  func zoom(to viewController: InteractiveDismissible & ZoomTransitioning,
+            sourceViewProvider: @escaping () -> UIView?,
+            sourceRect: CGRect? = nil,
+            with presentationStyle: UIModalPresentationStyle = .custom,
+            dismissShouldBegin: (() -> Bool)? = nil,
+            completion: (() -> Void)? = nil) {
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
+    interactionController.interactiveDismissShouldBegin = dismissShouldBegin
+    let delegate = PHZoomTransitioningDelegate(interactionController: interactionController)
+
+    viewController._zoomTransitioningDelegate = delegate
+    viewController._zoomTransitionSourceViewProvider = sourceViewProvider
+    viewController._zoomTransitionSourceView = sourceViewProvider()
+    if let sourceRect, sourceRect.isValidZoomTransitionSourceRect {
+      viewController._zoomTransitionSourceRect = sourceRect
+    } else {
+      let fallbackView = sourceViewProvider()
+      if let fallbackView,
+         fallbackView.window != nil {
+        let fallbackRect = fallbackView.convert(fallbackView.bounds, to: nil)
+        viewController._zoomTransitionSourceRect = fallbackRect.isValidZoomTransitionSourceRect ? fallbackRect : nil
+      } else {
+        viewController._zoomTransitionSourceRect = nil
+      }
+    }
+    viewController.interactiveTransitionManager = delegate
+    viewController.transitioningDelegate = delegate
+    viewController.modalPresentationStyle = presentationStyle
+
+    present(viewController, animated: true) {
+      completion?()
+    }
+  }
+}
+
+private extension CGRect {
+  var isValidZoomTransitionSourceRect: Bool {
+    guard !isNull, !isInfinite, !isEmpty else {
+      return false
+    }
+
+    return origin.x.isFinite
+      && origin.y.isFinite
+      && size.width.isFinite
+      && size.height.isFinite
+  }
 }
 
 extension UIViewController {
   fileprivate struct Holder {
-    static var _backButtonEnabled = [String: Bool]()
+    static var backButtonEnabled: UInt8 = 0
+    static var zoomTransitioningDelegate: UInt8 = 0
+    static var zoomTransitionSourceRect: UInt8 = 0
+    static var zoomTransitionSourceView: UInt8 = 0
+    static var zoomTransitionSourceViewProvider: UInt8 = 0
+  }
+
+  fileprivate final class WeakViewBox {
+    weak var value: UIView?
+
+    init(_ value: UIView?) {
+      self.value = value
+    }
+  }
+
+  fileprivate final class SourceViewProviderBox {
+    let value: () -> UIView?
+
+    init(_ value: @escaping () -> UIView?) {
+      self.value = value
+    }
   }
   
   public var backButtonEnabled: Bool {
     get {
-      Holder._backButtonEnabled[self.debugDescription] ?? false
+      (objc_getAssociatedObject(self, &Holder.backButtonEnabled) as? Bool) ?? false
     }
     set(newValue) {
-      Holder._backButtonEnabled[self.debugDescription] = newValue
+      objc_setAssociatedObject(self, &Holder.backButtonEnabled, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+  }
+
+  var _zoomTransitioningDelegate: PHZoomTransitioningDelegate? {
+    get {
+      objc_getAssociatedObject(self, &Holder.zoomTransitioningDelegate) as? PHZoomTransitioningDelegate
+    }
+    set {
+      objc_setAssociatedObject(self, &Holder.zoomTransitioningDelegate, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+  }
+
+  var _zoomTransitionSourceRect: CGRect? {
+    get {
+      (objc_getAssociatedObject(self, &Holder.zoomTransitionSourceRect) as? NSValue)?.cgRectValue
+    }
+    set {
+      let value = newValue.map(NSValue.init(cgRect:))
+      objc_setAssociatedObject(self, &Holder.zoomTransitionSourceRect, value, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+  }
+
+  var _zoomTransitionSourceView: UIView? {
+    get {
+      (objc_getAssociatedObject(self, &Holder.zoomTransitionSourceView) as? WeakViewBox)?.value
+    }
+    set {
+      let box = WeakViewBox(newValue)
+      objc_setAssociatedObject(self, &Holder.zoomTransitionSourceView, box, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+  }
+
+  var _zoomTransitionSourceViewProvider: (() -> UIView?)? {
+    get {
+      (objc_getAssociatedObject(self, &Holder.zoomTransitionSourceViewProvider) as? SourceViewProviderBox)?.value
+    }
+    set {
+      let box = newValue.map(SourceViewProviderBox.init)
+      objc_setAssociatedObject(self, &Holder.zoomTransitionSourceViewProvider, box, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     }
   }
 }

@@ -43,7 +43,9 @@ public final class OneWayPanGestureRecognizer: UIScreenEdgePanGestureRecognizer 
       return
     }
     
-    let touch: UITouch = unsafeDowncast(touches.first.unsafelyUnwrapped, to: UITouch.self)
+    guard let touch = touches.first else {
+      return
+    }
     let nowPoint: CGPoint = touch.location(in: view)
     let prevPoint: CGPoint = touch.previousLocation(in: view)
     moveX += Int(prevPoint.x - nowPoint.x)

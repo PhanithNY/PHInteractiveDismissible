@@ -5,18 +5,24 @@ import PackageDescription
 
 let package = Package(
     name: "PHInteractiveDismissible",
-    platforms: [.iOS(.v10)],
+    platforms: [.iOS(.v13)],
     products: [
         // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(
             name: "PHInteractiveDismissible",
             targets: ["PHInteractiveDismissible"]),
     ],
+    dependencies: [],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
-            name: "PHInteractiveDismissible"),
+            name: "PHInteractiveDismissibleObjC",
+            path: "Sources/PHInteractiveDismissibleObjC",
+            publicHeadersPath: "include"),
+        .target(
+            name: "PHInteractiveDismissible",
+            dependencies: ["PHInteractiveDismissibleObjC"]),
         .testTarget(
             name: "PHInteractiveDismissibleTests",
             dependencies: ["PHInteractiveDismissible"]),

@@ -1,23 +1,23 @@
 //
-//  PHModalPresentationController.swift
+//  PHZoomPresentationController.swift
+//  PHInteractiveDismissible
 //
-//
-//  Created by Phanith on 16/10/23.
+//  Created by Phanith Ny on 9/12/25.
 //
 
 import UIKit
 
-public final class PHModalPresentationController: UIPresentationController {
+public final class PHZoomPresentationController: UIPresentationController {
   
   // MARK: - Properties
   
   private(set) lazy var fadeView: UIView = {
     let view = UIView()
-    view.backgroundColor = UIColor.black.withAlphaComponent(0.6)
+    view.backgroundColor = UIColor.black.withAlphaComponent(0.25)
     view.alpha = 0
     return view
   }()
-  
+
   private var didBeginDismissalAppearanceTransition = false
   
   // MARK: - Override
@@ -61,7 +61,7 @@ public final class PHModalPresentationController: UIPresentationController {
       presentingViewController.beginAppearanceTransition(true, animated: true)
       return
     }
-    
+
     if coordinator.isInteractive {
       didBeginDismissalAppearanceTransition = true
       presentingViewController.beginAppearanceTransition(true, animated: true)
@@ -75,7 +75,7 @@ public final class PHModalPresentationController: UIPresentationController {
         self.fadeView.alpha = 0.0
       })
     }
-    
+
     coordinator.notifyWhenInteractionEnds { [weak self] context in
       guard let self else { return }
       if context.isCancelled {
