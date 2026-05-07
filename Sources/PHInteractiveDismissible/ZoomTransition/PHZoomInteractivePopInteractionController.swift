@@ -10,9 +10,10 @@ import UIKit
 public final class PHZoomInteractivePopInteractionController: NSObject, InteractiveTransitioning {
   private enum InteractionDriver {
     case pan
+    case verticalPan
     case pinch
   }
-  
+
   public var interactionInProgress = false
   /// Optional gate set by the `zoom()` caller. Takes precedence over the protocol property.
   public var interactiveDismissShouldBegin: (() -> Bool)?
@@ -65,6 +66,30 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   /// Y position (in container coords) where the pan gesture began. Used as the scale pivot so
   /// the card visually anchors at the touch point instead of the geometric center.
   private var panAnchorY: CGFloat = 0
+  /// X position (in container coords) where the *vertical* dismissal pan began. The vertical
+  /// path scales the card toward the touch X so a drag-down doesn't visually drift sideways
+  /// as the card shrinks.
+  private var verticalPanAnchorX: CGFloat = 0
+  /// Y position (in container coords) where the *vertical* dismissal pan began. Kept separate
+  /// from `panAnchorY` (owned by the horizontal path) so the two flows never share state.
+  private var verticalPanAnchorY: CGFloat = 0
+  /// Container height captured when the vertical pan begins. Used as the denominator for
+  /// progress and for the rubber-band shape, so vertical motion is sized against the screen
+  /// it can travel through (height) instead of the horizontal-pan distance (width).
+  private var verticalInteractionDistance: CGFloat = 0
+  /// Visible-effect amplifier for the vertical pan: the card moves and shrinks this many
+  /// times more than the raw rubber-band would produce, so the dismissal reads as more
+  /// responsive without the user having to drag further. Read by `verticalUpdate` (applied
+  /// to translation and scale) AND by `verticalGestureEnded` (scaled into the commit
+  /// threshold so the finish-vs-cancel decision matches what the user sees on screen).
+  private let verticalAmplification: CGFloat = 1.1
+  /// Dedicated vertical-down dismissal pan attached to the main view. Distinct from the
+  /// horizontal pan recognizer so the existing horizontal logic stays bit-identical.
+  private weak var verticalDismissPanGesture: UIPanGestureRecognizer?
+  /// Mirror of `verticalDismissPanGesture` attached to the `dismissibleScrollView` (when one
+  /// is provided), so a downward pan beginning on a scroll surface routes to the vertical
+  /// dismissal flow before the scroll view's own pan can take it.
+  private weak var verticalDismissScrollPanGesture: UIPanGestureRecognizer?
   /// EMA-smoothed pinch midpoint. Raw `gestureRecognizer.location(in:)` jitters because the
   /// centroid wobbles with sub-pixel finger movement; smoothing it strips the high-frequency
   /// noise so the card's translation reads as fluid finger-following instead of jittery snap.
@@ -101,24 +126,43 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     view.addGestureRecognizer(rotationGesture)
     rotationGestureRecognizer = rotationGesture
 
+    // Vertical-down dismissal pan. Lives alongside the horizontal recognizer; the gates in
+    // `gestureRecognizerShouldBegin(_:)` keep the two mutually exclusive (horizontal commits
+    // on rightward+horizontal velocity, vertical on downward+vertical), so only one will ever
+    // begin from any given touch.
+    let verticalGesture = UIPanGestureRecognizer(target: self, action: #selector(handleVerticalGesture(_:)))
+    verticalGesture.delegate = self
+    view.addGestureRecognizer(verticalGesture)
+    verticalDismissPanGesture = verticalGesture
+
     if let navigationController = viewController as? UINavigationController,
        let popGesture = navigationController.interactivePopGestureRecognizer {
       popGesture.require(toFail: gesture)
     }
-    
+
     if let preferredCornerRadius = viewController.preferredCornerRadius, preferredCornerRadius > 0.0 {
       let targetView: UIView = (viewController as? UINavigationController)?.view ?? view
       targetView.layer.cornerRadius = preferredCornerRadius
       targetView.layer.masksToBounds = true
     }
   }
-  
+
   private func resolveScrollViewGestures(_ scrollView: UIScrollView) {
     let scrollGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
     scrollGestureRecognizer.delegate = self
-    
+
     scrollView.addGestureRecognizer(scrollGestureRecognizer)
     scrollView.panGestureRecognizer.require(toFail: scrollGestureRecognizer)
+
+    // Mirror the vertical recognizer onto the scroll surface so a downward pan beginning on
+    // a scroll-view cell can drive dismissal. The scroll view's pan must fail-require this
+    // recognizer too — otherwise a quick downward flick would scroll the table instead of
+    // starting the dismissal even when the table is already at offset 0.
+    let scrollVerticalGesture = UIPanGestureRecognizer(target: self, action: #selector(handleVerticalGesture(_:)))
+    scrollVerticalGesture.delegate = self
+    scrollView.addGestureRecognizer(scrollVerticalGesture)
+    scrollView.panGestureRecognizer.require(toFail: scrollVerticalGesture)
+    verticalDismissScrollPanGesture = scrollVerticalGesture
   }
   
   // MARK: - Gesture handling
@@ -136,7 +180,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     let translation = gestureRecognizer.translation(in: referenceView).x
     let translationY = gestureRecognizer.translation(in: referenceView).y
     let velocity = gestureRecognizer.velocity(in: referenceView).x
-    
+
     switch gestureRecognizer.state {
     case .began:
       panAnchorY = gestureRecognizer.location(in: referenceView).y
@@ -144,18 +188,220 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
 
     case .changed:
       gestureChanged(translation: translation + interruptedTranslation, velocity: velocity, translationY: translationY)
-      
+
     case .cancelled:
       gestureCancelled(translation: translation + interruptedTranslation, velocity: velocity)
-      
+
     case .ended:
       gestureEnded(translation: translation + interruptedTranslation, velocity: velocity)
-      
+
     default:
       break
     }
   }
-  
+
+  // MARK: - Vertical pan handling
+
+  /// Dedicated handler for the vertical-down dismissal pan. Lives separately from
+  /// `handleGesture(_:)` so the existing horizontal flow stays untouched. Drives progress
+  /// off Y translation against `verticalInteractionDistance`, springs to `.identity` (cancel)
+  /// or to `resultTransform` (finish) via the same `cancel`/`finish` paths the other drivers
+  /// use — those are axis-agnostic.
+  @objc
+  private func handleVerticalGesture(_ gestureRecognizer: UIPanGestureRecognizer) {
+    let vcView = (viewController as? UINavigationController)?.view ?? viewController?.view
+    guard let referenceView = vcView?.superview ?? gestureRecognizer.view?.superview else {
+      return
+    }
+
+    let translationX = gestureRecognizer.translation(in: referenceView).x
+    let translationY = gestureRecognizer.translation(in: referenceView).y
+    let velocityY = gestureRecognizer.velocity(in: referenceView).y
+
+    switch gestureRecognizer.state {
+    case .began:
+      let location = gestureRecognizer.location(in: referenceView)
+      verticalPanAnchorX = location.x
+      verticalPanAnchorY = location.y
+      // Capture the travel-space size now (referenceView is the container the animated view
+      // sits in) so `verticalUpdate` and `verticalGestureEnded` have a denominator without
+      // having to wait for `startInteractiveTransition`'s containerView read.
+      verticalInteractionDistance = referenceView.bounds.height
+      gestureBegan(driver: .verticalPan)
+
+    case .changed:
+      verticalGestureChanged(translationY: translationY, translationX: translationX)
+
+    case .cancelled:
+      verticalGestureCancelled(translationY: translationY, velocityY: velocityY)
+
+    case .ended:
+      verticalGestureEnded(translationY: translationY, velocityY: velocityY)
+
+    default:
+      break
+    }
+  }
+
+  private func verticalGestureChanged(translationY: CGFloat, translationX: CGFloat) {
+    // Reject upward travel — vertical dismissal is down-only. Without this guard, an upward
+    // wander after a downward start would compute negative progress and rubber-band the card
+    // into a "pre-dismissal" pose `verticalUpdate` isn't designed to resolve.
+    if translationY < 0 {
+      return
+    }
+    let distance = max(verticalInteractionDistance, 1)
+    let progress = max(0.0, min(1.0, translationY / distance))
+    verticalUpdate(progress: progress, translationY: translationY, translationX: translationX)
+  }
+
+  private func verticalGestureCancelled(translationY: CGFloat, velocityY: CGFloat) {
+    if transitionContext == nil {
+      resetInteractionState()
+      return
+    }
+    cancel(initialSpringVelocity: springVelocity(distanceToTravel: -translationY, gestureVelocity: velocityY))
+  }
+
+  private func verticalGestureEnded(translationY: CGFloat, velocityY: CGFloat) {
+    if transitionContext == nil {
+      resetInteractionState()
+      return
+    }
+
+    // Same commit thresholds as horizontal — fast flick or past the midpoint without an
+    // upward fling. Velocity is Y in points/sec (positive = downward). The translation gets
+    // multiplied by `verticalAmplification` so the threshold tracks what the user *sees*
+    // rather than the raw finger distance: `verticalUpdate` already inflates visible motion
+    // by the same factor, so a finger drag that visually crosses the halfway point should
+    // commit even though the raw `translationY` is still ~9% below `interactionDistance/2`.
+    let amplifiedTranslationY = translationY * verticalAmplification
+    let shouldFinish = velocityY > 300 || (amplifiedTranslationY > 150*verticalAmplification && velocityY > -300)
+    let currentTranslationY = fromView?.transform.ty ?? 0.0
+    let distanceToTravel = shouldFinish ? (resultTransform.ty - currentTranslationY) : -currentTranslationY
+    let initialVelocity = springVelocity(distanceToTravel: distanceToTravel, gestureVelocity: velocityY)
+
+    if shouldFinish {
+      finish(initialSpringVelocity: initialVelocity)
+    } else {
+      cancel(initialSpringVelocity: initialVelocity)
+    }
+  }
+
+  /// Per-frame transform composition for the vertical dismissal pan. Mirrors `update(...)`
+  /// in shape but with Y as the primary axis: Y drives `scaleProgress`, the heavy 1:1
+  /// rubber-band lives on Y, and the scale pivot anchors at `verticalPanAnchorX` so a
+  /// drag-down doesn't drift the card sideways as it shrinks.
+  private func verticalUpdate(progress: CGFloat, translationY: CGFloat, translationX: CGFloat) {
+    guard let transitionContext,
+          let fromView,
+          let maskView,
+          let overlayView,
+          let snapshotView else {
+      return
+    }
+
+    transitionContext.updateInteractiveTransition(progress)
+
+    let minimumScale = zoomOption?.minimumScale ?? 0.5
+    // Use a vertical-distance-sized rubber-band so the asymptote matches the screen height
+    // the gesture travels through. The horizontal `weightedTranslation` is sized against
+    // `interactionDistance` (width), which would compress the curve incorrectly here.
+    // `verticalAmplification` (a stored constant) inflates the visible motion uniformly
+    // across translation and scale; the same constant is applied to the commit threshold
+    // in `verticalGestureEnded` so the finish/cancel decision matches what's drawn.
+    let weightedTranslationY = weightedVerticalDismissalTranslation(translationY) * verticalAmplification
+    let weightedTranslationX = weightedVerticalTranslation(translationX) * verticalAmplification
+    let maxVisibleTranslation = weightedVerticalDismissalTranslation(verticalInteractionDistance)
+    let rawScaleProgress = weightedTranslationY / max(maxVisibleTranslation, 1)
+    let scaleProgress = max(0.0, min(1.0, rawScaleProgress * verticalAmplification))
+    let weightedProgress = weightedScaleProgress(scaleProgress)
+
+    var transform = interactiveTransform(progress: weightedProgress,
+                                         translationX: weightedTranslationX,
+                                         translationY: weightedTranslationY,
+                                         minimumScale: minimumScale)
+    // Use a *relaxed* clamp here. The horizontal `clampedTranslation` enforces a 50pt inset
+    // on every edge — at scale ≈ 1 (start of any pan) the unscaled view IS the container
+    // size, so those insets over-constrain by 100pt and the math resolves to ty ≈ -50,
+    // making the card jump upward before catching up to the finger. The relaxed version
+    // below keeps the X clamp tight (so the pivot adjustment can't push the card fully
+    // off-screen sideways) but adds a `verticalOverflow` of off-screen overhang on the Y
+    // axis so the card follows the finger 1:1 (modulo rubber-band) until the user has
+    // travelled past `verticalOverflow`. By then scale has shrunk enough for the strict
+    // bound to relax naturally.
+    let verticalOverflow: CGFloat = 120
+    transform = relaxedVerticalClampedTranslation(transform,
+                                                  in: transitionContext.containerView.bounds,
+                                                  for: fromView.bounds,
+                                                  verticalOverflow: verticalOverflow)
+
+    // Anchor the scale pivot at the gesture's start X so the card scales toward the touch
+    // column instead of the geometric center — keeps the original-screen point at
+    // `verticalPanAnchorX` pinned under the finger as the card shrinks.
+    let currentScale = hypot(transform.a, transform.c)
+    let pivotOffsetX = verticalPanAnchorX - fromView.bounds.midX
+    transform.tx += pivotOffsetX * (1.0 - currentScale)
+
+    fromView.transform = transform
+
+    if let shadowView {
+      let cornerRadius = max(initialCornerRadius, interpolateValue(from: initialCornerRadius, to: finalCornerRadius, progress: progress))
+      shadowView.transform = transform
+      shadowView.layer.shadowOpacity = Float(progress * 0.85)
+      shadowView.layer.shadowPath = UIBezierPath(
+        roundedRect: fromView.bounds,
+        cornerRadius: cornerRadius
+      ).cgPath
+    }
+
+    let cornerRadius = max(initialCornerRadius, interpolateValue(from: initialCornerRadius, to: finalCornerRadius, progress: progress))
+    maskView.frame = initialMaskFrame
+    maskView.layer.cornerRadius = cornerRadius
+    overlayView.layer.opacity = Float(1.0 - progress)
+    dimmingView?.alpha = dimmingView == nil ? (1.0 - progress) : 1.0
+    blurView?.alpha = 0.0
+    snapshotView.frame = initialSnapshotFrame
+    snapshotView.layer.cornerRadius = cornerRadius
+    snapshotView.alpha = 0.0
+
+    if let presentedViewController = transitionContext.viewController(forKey: .from),
+       let modalPresentationController = presentedViewController.presentationController as? PHZoomPresentationController {
+      modalPresentationController.fadeView.alpha = 0.5 * (1.0 - progress)
+    }
+  }
+
+  /// Gate for the vertical recognizer. Lives outside `gestureRecognizerShouldBegin(_:)` so
+  /// the horizontal branch above doesn't grow conditionals — the horizontal gate just routes
+  /// vertical recognizers here.
+  private func shouldBeginVerticalPan(_ gestureRecognizer: UIPanGestureRecognizer) -> Bool {
+    guard zoomOptionForPresentedViewController(viewController)?.allowsVerticalPanDismissal ?? false else {
+      return false
+    }
+    // If the dismissibleScrollView has a refresh control, the downward-pull-at-top gesture
+    // belongs to it — competing with pull-to-refresh would either swallow the refresh
+    // (user pulls down, card dismisses instead of refreshing) or fight it (refresh and
+    // dismiss both partially activate). Surrender the vertical axis entirely; horizontal
+    // pan dismissal is unaffected.
+    if let scrollView = viewController.dismissibleScrollView, scrollView.refreshControl != nil {
+      return false
+    }
+    let velocity = gestureRecognizer.velocity(in: gestureRecognizer.view)
+    let isDownwardPan = velocity.y > 0
+    let isPrimarilyVertical = abs(velocity.y) > abs(velocity.x)
+    guard isDownwardPan, isPrimarilyVertical else {
+      return false
+    }
+    // For scroll-attached vertical recognizers, only begin at the top of the scroll content.
+    // This matches the horizontal branch's `contentOffset.x <= 0` convention and prevents a
+    // mid-table flick from stealing the scroll's pan.
+    if gestureRecognizer === verticalDismissScrollPanGesture,
+       let scrollView = viewController.dismissibleScrollView {
+      return scrollView.contentOffset.y <= 0
+    }
+    return true
+  }
+
   @objc
   private func handlePinchGesture(_ gestureRecognizer: UIPinchGestureRecognizer) {
     let vcView = (viewController as? UINavigationController)?.view ?? viewController?.view
@@ -626,6 +872,12 @@ extension PHZoomInteractivePopInteractionController: UIGestureRecognizerDelegate
       // `gestureBegan` during the cancel animation, point the controller at a stale
       // transitionContext, and corrupt `disabledInteractionViews` bookkeeping.
       guard !interactionInProgress else { return false }
+      // Vertical-only dismissal pan is gated separately below; this branch only services the
+      // horizontal recognizer the existing logic owns.
+      if panGestureRecognizer === verticalDismissPanGesture
+          || panGestureRecognizer === verticalDismissScrollPanGesture {
+        return shouldBeginVerticalPan(panGestureRecognizer)
+      }
       let velocity = panGestureRecognizer.velocity(in: panGestureRecognizer.view)
       let isRightwardPan = velocity.x > 0
       let isPrimarilyHorizontal = abs(velocity.x) > abs(velocity.y)
@@ -633,7 +885,7 @@ extension PHZoomInteractivePopInteractionController: UIGestureRecognizerDelegate
         return false
       }
     }
-    
+
     if let scrollView = viewController.dismissibleScrollView {
       return scrollView.contentOffset.x <= 0
     }
@@ -851,7 +1103,50 @@ extension PHZoomInteractivePopInteractionController {
 
     return CGAffineTransform(a: transform.a, b: transform.b, c: transform.c, d: transform.d, tx: tx, ty: ty)
   }
-  
+
+  /// Sibling of `clampedTranslation` for the vertical dismissal pan. X clamping is identical
+  /// (keeps the card from drifting fully off-screen sideways once the pivot adjustment kicks
+  /// in). Y clamping uses a NEGATIVE inset of `verticalOverflow` points — i.e., the view is
+  /// allowed to extend `verticalOverflow` past each container edge before clamping kicks in.
+  /// The strict ±50pt inset that horizontal pan uses would force ty ≈ -50 at scale 1 (start
+  /// of the gesture), making the card jump upward; the relaxed bound lets the card track the
+  /// finger 1:1 through the early gesture, then re-engages once travel exceeds the overflow.
+  private func relaxedVerticalClampedTranslation(_ transform: CGAffineTransform,
+                                                 in containerBounds: CGRect,
+                                                 for viewBounds: CGRect,
+                                                 verticalOverflow: CGFloat) -> CGAffineTransform {
+    let scale = hypot(transform.a, transform.c)
+    let scaledHeight = viewBounds.height * scale
+
+    let containerCenterX = containerBounds.midX
+    let containerCenterY = containerBounds.midY
+    let centerX = containerCenterX + transform.tx
+    let centerY = containerCenterY + transform.ty
+
+    var tx = transform.tx
+    var ty = transform.ty
+
+    if centerX < containerBounds.minX {
+      tx += containerBounds.minX - centerX
+    } else if centerX > containerBounds.maxX {
+      tx -= centerX - containerBounds.maxX
+    }
+
+    let allowedTop = containerBounds.minY - verticalOverflow
+    let minY = centerY - scaledHeight / 2
+    if minY < allowedTop {
+      ty += allowedTop - minY
+    }
+
+    let allowedBottom = containerBounds.maxY + verticalOverflow
+    let maxY = centerY + scaledHeight / 2
+    if maxY > allowedBottom {
+      ty -= maxY - allowedBottom
+    }
+
+    return CGAffineTransform(a: transform.a, b: transform.b, c: transform.c, d: transform.d, tx: tx, ty: ty)
+  }
+
   private func clampedTransform(from: CGAffineTransform, to: CGAffineTransform, progress: CGFloat, minimumScale: CGFloat) -> CGAffineTransform {
     let transform = interpolateTransform(from: from, to: to, progress: progress)
     let scaleX = hypot(transform.a, transform.c)
@@ -913,6 +1208,16 @@ extension PHZoomInteractivePopInteractionController {
     let absT = abs(translation)
     let resisted = d * (1.0 - 1.0 / (c * absT / d + 1.0))
     return translation < 0 ? -resisted : resisted
+  }
+
+  /// Same shape as `weightedTranslation` but sized against `verticalInteractionDistance`
+  /// (container height) instead of `interactionDistance` (container width). Used by the
+  /// vertical dismissal pan so the rubber-band asymptote matches the actual travel space.
+  private func weightedVerticalDismissalTranslation(_ translation: CGFloat) -> CGFloat {
+    guard verticalInteractionDistance > 0 else { return translation * 0.55 }
+    let c: CGFloat = 0.82
+    let d = verticalInteractionDistance
+    return d * (1.0 - 1.0 / (c * translation / d + 1.0))
   }
   
   /// Let scaling lag behind the raw gesture progress a bit to avoid a weightless feel.
