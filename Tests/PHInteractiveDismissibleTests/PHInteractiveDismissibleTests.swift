@@ -82,7 +82,8 @@ final class PHInteractiveDismissibleTests: XCTestCase {
     navigationController.setViewControllers([rootViewController, childViewController], animated: false)
 
     let interactionController = PHZoomInteractivePopInteractionController(viewController: navigationController)
-    let pinchGestureRecognizer = UIPinchGestureRecognizer()
+    let pinchGestureRecognizer = StubPinchGestureRecognizer()
+    pinchGestureRecognizer.stubNumberOfTouches = 2
 
     XCTAssertFalse(interactionController.gestureRecognizerShouldBegin(pinchGestureRecognizer))
   }
@@ -90,13 +91,78 @@ final class PHInteractiveDismissibleTests: XCTestCase {
   func testZoomInteractionAllowsPinchWhenNavigationStackHasSingleViewController() {
     let navigationController = ZoomTestNavigationController(rootViewController: ZoomTestViewController())
     let interactionController = PHZoomInteractivePopInteractionController(viewController: navigationController)
-    let pinchGestureRecognizer = UIPinchGestureRecognizer()
+    let pinchGestureRecognizer = StubPinchGestureRecognizer()
+    pinchGestureRecognizer.stubNumberOfTouches = 2
 
     XCTAssertTrue(interactionController.gestureRecognizerShouldBegin(pinchGestureRecognizer))
 
     interactionController.interactionInProgress = true
 
     XCTAssertFalse(interactionController.gestureRecognizerShouldBegin(pinchGestureRecognizer))
+  }
+
+  func testZoomInteractionLazilyWiresDismissibleScrollViewGestures() {
+    let viewController = ZoomTestViewController()
+    let scrollView = UIScrollView()
+    viewController.configuredScrollView = scrollView
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
+    let panGestureRecognizer = StubPanGestureRecognizer()
+    panGestureRecognizer.stubVelocity = CGPoint(x: 100, y: 0)
+
+    XCTAssertFalse(interactionController.isHorizontalDismissGestureWired(to: scrollView))
+    XCTAssertFalse(interactionController.isVerticalDismissGestureWired(to: scrollView))
+
+    XCTAssertTrue(interactionController.gestureRecognizerShouldBegin(panGestureRecognizer))
+
+    XCTAssertTrue(interactionController.isHorizontalDismissGestureWired(to: scrollView))
+    XCTAssertTrue(interactionController.isVerticalDismissGestureWired(to: scrollView))
+  }
+
+  func testZoomInteractionRewiresReplacementTopScrollViewAfterSetViewControllers() {
+    let originalViewController = ZoomTestViewController()
+    let originalScrollView = UIScrollView()
+    originalViewController.configuredScrollView = originalScrollView
+
+    let replacementViewController = ZoomTestViewController()
+    let replacementScrollView = UIScrollView()
+    replacementViewController.configuredScrollView = replacementScrollView
+
+    let navigationController = ZoomTestNavigationController(rootViewController: originalViewController)
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: navigationController)
+    let panGestureRecognizer = StubPanGestureRecognizer()
+    panGestureRecognizer.stubVelocity = CGPoint(x: 100, y: 0)
+
+    XCTAssertTrue(interactionController.gestureRecognizerShouldBegin(panGestureRecognizer))
+    XCTAssertTrue(interactionController.isHorizontalDismissGestureWired(to: originalScrollView))
+    XCTAssertTrue(interactionController.isVerticalDismissGestureWired(to: originalScrollView))
+    XCTAssertFalse(interactionController.isHorizontalDismissGestureWired(to: replacementScrollView))
+    XCTAssertFalse(interactionController.isVerticalDismissGestureWired(to: replacementScrollView))
+
+    navigationController.setViewControllers([replacementViewController], animated: false)
+
+    XCTAssertTrue(interactionController.gestureRecognizerShouldBegin(panGestureRecognizer))
+    XCTAssertTrue(interactionController.isHorizontalDismissGestureWired(to: replacementScrollView))
+    XCTAssertTrue(interactionController.isVerticalDismissGestureWired(to: replacementScrollView))
+  }
+
+  func testZoomInteractionRepeatedGestureChecksDoNotChangeScrollViewRecognizerCount() {
+    let viewController = ZoomTestViewController()
+    let scrollView = UIScrollView()
+    viewController.configuredScrollView = scrollView
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
+    let panGestureRecognizer = StubPanGestureRecognizer()
+    panGestureRecognizer.stubVelocity = CGPoint(x: 100, y: 0)
+
+    let initialGestureCount = scrollView.gestureRecognizers?.count ?? 0
+
+    XCTAssertTrue(interactionController.gestureRecognizerShouldBegin(panGestureRecognizer))
+    let gestureCountAfterFirstCheck = scrollView.gestureRecognizers?.count ?? 0
+
+    XCTAssertTrue(interactionController.gestureRecognizerShouldBegin(panGestureRecognizer))
+    let gestureCountAfterSecondCheck = scrollView.gestureRecognizers?.count ?? 0
+
+    XCTAssertEqual(gestureCountAfterFirstCheck, initialGestureCount)
+    XCTAssertEqual(gestureCountAfterSecondCheck, initialGestureCount)
   }
 
   func testZoomInteractionRejectsPanWhenInteractionInProgress() {
@@ -226,7 +292,13 @@ private final class TestDismissibleViewController: UIViewController, Interactive
   }
 }
 
-private final class ZoomTestViewController: UIViewController, InteractiveDismissible, ZoomTransitioning {}
+private final class ZoomTestViewController: UIViewController, InteractiveDismissible, ZoomTransitioning {
+  var configuredScrollView: UIScrollView?
+
+  var dismissibleScrollView: UIScrollView? {
+    configuredScrollView
+  }
+}
 
 private final class ZoomTestNavigationController: UINavigationController, ZoomTransitioning {}
 
@@ -433,5 +505,13 @@ private final class StubPanGestureRecognizer: UIPanGestureRecognizer {
 
   override func velocity(in view: UIView?) -> CGPoint {
     stubVelocity
+  }
+}
+
+private final class StubPinchGestureRecognizer: UIPinchGestureRecognizer {
+  var stubNumberOfTouches = 0
+
+  override var numberOfTouches: Int {
+    stubNumberOfTouches
   }
 }

@@ -6,8 +6,18 @@
 //
 
 import UIKit
+import ObjectiveC
 
 public final class PHZoomInteractivePopInteractionController: NSObject, InteractiveTransitioning {
+  private enum AssociatedKeys {
+    // Each scroll view remembers which dismiss gestures it has already been wired to fail.
+    // This matters for navigation-backed presentations: `setViewControllers(...)` can swap
+    // the top controller without recreating this interaction controller, so we lazily wire
+    // the newly exposed scroll view on first gesture evaluation instead of depending on init.
+    static var wiredHorizontalDismissGesture: UInt8 = 0
+    static var wiredVerticalDismissGesture: UInt8 = 0
+  }
+
   private enum InteractionDriver {
     case pan
     case verticalPan
@@ -83,13 +93,13 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   /// to translation and scale) AND by `verticalGestureEnded` (scaled into the commit
   /// threshold so the finish-vs-cancel decision matches what the user sees on screen).
   private let verticalAmplification: CGFloat = 1.1
+  /// Horizontal dismissal pan attached to the container view. Kept as a reference so any
+  /// current `dismissibleScrollView` can require its own pan to fail this one, even after
+  /// `setViewControllers(...)` swaps the visible child controller.
+  private weak var dismissPanGesture: UIPanGestureRecognizer?
   /// Dedicated vertical-down dismissal pan attached to the main view. Distinct from the
   /// horizontal pan recognizer so the existing horizontal logic stays bit-identical.
   private weak var verticalDismissPanGesture: UIPanGestureRecognizer?
-  /// Mirror of `verticalDismissPanGesture` attached to the `dismissibleScrollView` (when one
-  /// is provided), so a downward pan beginning on a scroll surface routes to the vertical
-  /// dismissal flow before the scroll view's own pan can take it.
-  private weak var verticalDismissScrollPanGesture: UIPanGestureRecognizer?
   /// EMA-smoothed pinch midpoint. Raw `gestureRecognizer.location(in:)` jitters because the
   /// centroid wobbles with sub-pixel finger movement; smoothing it strips the high-frequency
   /// noise so the card's translation reads as fluid finger-following instead of jittery snap.
@@ -107,15 +117,13 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
       prepareGestureRecognizer(in: viewController.view)
     }
     
-    if let scrollView = viewController.dismissibleScrollView {
-      resolveScrollViewGestures(scrollView)
-    }
   }
   
   private func prepareGestureRecognizer(in view: UIView) {
     let gesture = UIPanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
     gesture.delegate = self
     view.addGestureRecognizer(gesture)
+    dismissPanGesture = gesture
 
     let pinchGesture = UIPinchGestureRecognizer(target: self, action: #selector(handlePinchGesture(_:)))
     pinchGesture.delegate = self
@@ -148,21 +156,35 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   }
 
   private func resolveScrollViewGestures(_ scrollView: UIScrollView) {
-    let scrollGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
-    scrollGestureRecognizer.delegate = self
+    // Keep the actual dismissal recognizers on the container view. The scroll view only
+    // participates by making its own pan wait for those recognizers to fail. This matches the
+    // navigation-hosted interactive-pop fix and avoids attaching throwaway custom pans to each
+    // new top controller's scroll view when `setViewControllers(...)` replaces the stack.
+    if let dismissPanGesture,
+       objc_getAssociatedObject(scrollView, &AssociatedKeys.wiredHorizontalDismissGesture) as? UIPanGestureRecognizer !== dismissPanGesture {
+      scrollView.panGestureRecognizer.require(toFail: dismissPanGesture)
+      objc_setAssociatedObject(scrollView,
+                               &AssociatedKeys.wiredHorizontalDismissGesture,
+                               dismissPanGesture,
+                               .OBJC_ASSOCIATION_ASSIGN)
+    }
 
-    scrollView.addGestureRecognizer(scrollGestureRecognizer)
-    scrollView.panGestureRecognizer.require(toFail: scrollGestureRecognizer)
+    if let verticalDismissPanGesture,
+       objc_getAssociatedObject(scrollView, &AssociatedKeys.wiredVerticalDismissGesture) as? UIPanGestureRecognizer !== verticalDismissPanGesture {
+      scrollView.panGestureRecognizer.require(toFail: verticalDismissPanGesture)
+      objc_setAssociatedObject(scrollView,
+                               &AssociatedKeys.wiredVerticalDismissGesture,
+                               verticalDismissPanGesture,
+                               .OBJC_ASSOCIATION_ASSIGN)
+    }
+  }
 
-    // Mirror the vertical recognizer onto the scroll surface so a downward pan beginning on
-    // a scroll-view cell can drive dismissal. The scroll view's pan must fail-require this
-    // recognizer too — otherwise a quick downward flick would scroll the table instead of
-    // starting the dismissal even when the table is already at offset 0.
-    let scrollVerticalGesture = UIPanGestureRecognizer(target: self, action: #selector(handleVerticalGesture(_:)))
-    scrollVerticalGesture.delegate = self
-    scrollView.addGestureRecognizer(scrollVerticalGesture)
-    scrollView.panGestureRecognizer.require(toFail: scrollVerticalGesture)
-    verticalDismissScrollPanGesture = scrollVerticalGesture
+  internal func isHorizontalDismissGestureWired(to scrollView: UIScrollView) -> Bool {
+    objc_getAssociatedObject(scrollView, &AssociatedKeys.wiredHorizontalDismissGesture) as? UIPanGestureRecognizer === dismissPanGesture
+  }
+
+  internal func isVerticalDismissGestureWired(to scrollView: UIScrollView) -> Bool {
+    objc_getAssociatedObject(scrollView, &AssociatedKeys.wiredVerticalDismissGesture) as? UIPanGestureRecognizer === verticalDismissPanGesture
   }
   
   // MARK: - Gesture handling
@@ -392,13 +414,20 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     guard isDownwardPan, isPrimarilyVertical else {
       return false
     }
-    // For scroll-attached vertical recognizers, only begin at the top of the scroll content.
-    // This matches the horizontal branch's `contentOffset.x <= 0` convention and prevents a
-    // mid-table flick from stealing the scroll's pan.
-    if gestureRecognizer === verticalDismissScrollPanGesture,
-       let scrollView = viewController.dismissibleScrollView {
-      return scrollView.contentOffset.y <= 0
+
+    if let scrollView = viewController.dismissibleScrollView,
+       let hostView = gestureRecognizer.view {
+      // Only apply the "scroll must be at top" rule when the touch actually begins inside the
+      // dismissible scroll view. For nav-hosted presentations the recognizer lives on the
+      // container view, so without this hit-test any downward drag anywhere on screen would be
+      // incorrectly blocked by the scroll view's current content offset.
+      let location = gestureRecognizer.location(in: hostView)
+      let locationInScrollView = hostView.convert(location, to: scrollView)
+      if scrollView.bounds.contains(locationInScrollView) {
+        return scrollView.contentOffset.y <= 0
+      }
     }
+
     return true
   }
 
@@ -841,6 +870,12 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
 
 extension PHZoomInteractivePopInteractionController: UIGestureRecognizerDelegate {
   public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    if let scrollView = viewController.dismissibleScrollView {
+      // Wire the current top controller's scroll view lazily so navigation-stack replacements
+      // are handled even when the presented UINavigationController instance never changes.
+      resolveScrollViewGestures(scrollView)
+    }
+
     let shouldBeginGate = interactiveDismissShouldBegin ?? viewController.interactiveDismissShouldBegin
     if let shouldBegin = shouldBeginGate, !shouldBegin() {
       return false
@@ -874,8 +909,7 @@ extension PHZoomInteractivePopInteractionController: UIGestureRecognizerDelegate
       guard !interactionInProgress else { return false }
       // Vertical-only dismissal pan is gated separately below; this branch only services the
       // horizontal recognizer the existing logic owns.
-      if panGestureRecognizer === verticalDismissPanGesture
-          || panGestureRecognizer === verticalDismissScrollPanGesture {
+      if panGestureRecognizer === verticalDismissPanGesture {
         return shouldBeginVerticalPan(panGestureRecognizer)
       }
       let velocity = panGestureRecognizer.velocity(in: panGestureRecognizer.view)
