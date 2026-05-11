@@ -39,7 +39,14 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
       resolveScrollViewGestures(scrollView)
     }
   }
-  
+
+  deinit {
+    // Last line of defence: if the controller is torn down mid-interaction (e.g. the presented
+    // VC is a cache/singleton whose views outlive this instance), restore any subviews we
+    // disabled — otherwise they stay `isUserInteractionEnabled = false` with nothing left to fix them.
+    enableOtherTouches()
+  }
+
   private func prepareGestureRecognizer(in view: UIView) {
     let gesture = UIPanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
     gesture.delegate = self
@@ -100,11 +107,17 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
     if !interactionInProgress {
       interactionInProgress = true
       viewController.dismiss(animated: true)
-      DispatchQueue.main.async { [weak self] in
-        guard let self else { return }
-        if self.transitionContext == nil && self.interactionInProgress {
-          self.resetInteractionState()
-        }
+    }
+
+    // Safety net, scheduled on *every* `.began` (not just the first):
+    // - If `dismiss(animated:)` didn't start a custom transition by the next run-loop tick,
+    //   `transitionContext` stays nil — recover so `disableOtherTouches`'s snapshot doesn't strand.
+    // - If a previous interaction wedged the controller (`interactionInProgress == true` with no
+    //   live `transitionContext`), this re-arms the recovery the old single-shot version couldn't.
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      if self.transitionContext == nil && self.interactionInProgress {
+        self.resetInteractionState()
       }
     }
   }
@@ -178,6 +191,9 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   
   private func cancel(initialSpringVelocity: CGFloat) {
     guard let transitionContext = transitionContext, let presentedFrame = presentedFrame else {
+      // No live transition to wind down — but `disableOtherTouches()` already ran in
+      // `gestureBegan`. Bailing without restoring is the dead-tap leak; reset instead.
+      resetInteractionState()
       return
     }
     
@@ -217,7 +233,11 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   }
   
   private func finish(initialSpringVelocity: CGFloat) {
-    guard let transitionContext = transitionContext, let presentedFrame = presentedFrame else { return }
+    guard let transitionContext = transitionContext, let presentedFrame = presentedFrame else {
+      // See `cancel(initialSpringVelocity:)` — never leave `disabledInteractionViews` stranded.
+      resetInteractionState()
+      return
+    }
     let presentedViewController = transitionContext.viewController(forKey: .from) as! InteractiveDismissible
     let presentingViewController = transitionContext.viewController(forKey: .to).unsafelyUnwrapped
     

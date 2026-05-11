@@ -118,7 +118,14 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     }
     
   }
-  
+
+  deinit {
+    // Last line of defence: if the controller is torn down mid-interaction (e.g. the presented
+    // VC is a cache/singleton whose views outlive this instance), restore any subviews we
+    // disabled — otherwise they stay `isUserInteractionEnabled = false` with nothing left to fix them.
+    enableOtherTouches()
+  }
+
   private func prepareGestureRecognizer(in view: UIView) {
     let gesture = UIPanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
     gesture.delegate = self
@@ -528,18 +535,24 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
 
   private func gestureBegan(driver: InteractionDriver) {
     disableOtherTouches()
-    
+
     interruptedTranslation = 0
     interactionDriver = driver
-    
+
     if !interactionInProgress {
       interactionInProgress = true
       viewController.dismiss(animated: true)
-      DispatchQueue.main.async { [weak self] in
-        guard let self else { return }
-        if self.transitionContext == nil && self.interactionInProgress {
-          self.resetInteractionState()
-        }
+    }
+
+    // Safety net, scheduled on *every* `.began` (not just the first):
+    // - If `dismiss(animated:)` didn't start a custom transition by the next run-loop tick,
+    //   `transitionContext` stays nil — recover so `disableOtherTouches`'s snapshot doesn't strand.
+    // - If a previous interaction wedged the controller (`interactionInProgress == true` with no
+    //   live `transitionContext`), this re-arms the recovery the old single-shot version couldn't.
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      if self.transitionContext == nil && self.interactionInProgress {
+        self.resetInteractionState()
       }
     }
   }
@@ -744,6 +757,15 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
           let maskView,
           let overlayView,
           let snapshotView else {
+      // A half-torn-down transition (a weak transition view already gone, or a second
+      // cancel/finish after the first completed) must not leave `disabledInteractionViews`
+      // stranded — that's the dead-tap leak. Wind down whatever is still live, then reset.
+      if let context = self.transitionContext {
+        context.cancelInteractiveTransition()
+        context.completeTransition(false)
+      }
+      cleanUpTransitionViews()
+      resetInteractionState()
       return
     }
 
@@ -785,7 +807,16 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
           let fromView,
           let maskView,
           let overlayView,
-          let snapshotView else { return }
+          let snapshotView else {
+      // See `cancel(initialSpringVelocity:)` — never leave `disabledInteractionViews` stranded.
+      if let context = self.transitionContext {
+        context.cancelInteractiveTransition()
+        context.completeTransition(false)
+      }
+      cleanUpTransitionViews()
+      resetInteractionState()
+      return
+    }
 
     // Match non-interactive dismissal timing for snapshot crossfade (blur morph removed).
     let finishDuration = max((zoomOption?.duration ?? 0.35) * 1.32, 0.5)
@@ -884,6 +915,14 @@ extension PHZoomInteractivePopInteractionController: UIGestureRecognizerDelegate
     if let navigationController = viewController as? UINavigationController,
        navigationController.viewControllers.count > 1 {
       return false
+    }
+
+    // Self-heal: if a prior interaction left us flagged in-progress but with no live transition
+    // (a transition that failed to start, or a torn-down context), the `interactionInProgress`
+    // gates below would reject every gesture forever — and any subviews `disableOtherTouches()`
+    // disabled would stay dead. Clear the wedged state so this gesture (and they) recover.
+    if interactionInProgress, transitionContext == nil {
+      resetInteractionState()
     }
 
     if let pinchGestureRecognizer = gestureRecognizer as? UIPinchGestureRecognizer {
