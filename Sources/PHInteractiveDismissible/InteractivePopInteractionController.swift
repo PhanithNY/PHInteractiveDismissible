@@ -50,6 +50,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   private func prepareGestureRecognizer(in view: UIView) {
     let gesture = UIPanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
     gesture.delegate = self
+    gesture.cancelsTouchesInView = false
     view.addGestureRecognizer(gesture)
     
     if let preferredCornerRadius = viewController.preferredCornerRadius, preferredCornerRadius > 0.0 {
@@ -62,6 +63,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   private func resolveScrollViewGestures(_ scrollView: UIScrollView) {
     let scrollGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
     scrollGestureRecognizer.delegate = self
+    scrollGestureRecognizer.cancelsTouchesInView = false
     
     scrollView.addGestureRecognizer(scrollGestureRecognizer)
     scrollView.panGestureRecognizer.require(toFail: scrollGestureRecognizer)
@@ -328,7 +330,12 @@ extension InteractivePopInteractionController: UIGestureRecognizerDelegate {
       return false
     }
 
+    if interactionInProgress, transitionContext == nil {
+      resetInteractionState()
+    }
+
     if let panGestureRecognizer = gestureRecognizer as? UIPanGestureRecognizer {
+      guard !interactionInProgress else { return false }
       let velocity = panGestureRecognizer.velocity(in: panGestureRecognizer.view)
       let isRightwardPan = velocity.x > 0
       let isPrimarilyHorizontal = abs(velocity.x) > abs(velocity.y)

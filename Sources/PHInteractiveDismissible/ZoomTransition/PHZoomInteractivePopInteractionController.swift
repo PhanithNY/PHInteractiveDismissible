@@ -129,6 +129,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   private func prepareGestureRecognizer(in view: UIView) {
     let gesture = UIPanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
     gesture.delegate = self
+    gesture.cancelsTouchesInView = false
     view.addGestureRecognizer(gesture)
     dismissPanGesture = gesture
 
@@ -147,6 +148,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     // begin from any given touch.
     let verticalGesture = UIPanGestureRecognizer(target: self, action: #selector(handleVerticalGesture(_:)))
     verticalGesture.delegate = self
+    verticalGesture.cancelsTouchesInView = false
     view.addGestureRecognizer(verticalGesture)
     verticalDismissPanGesture = verticalGesture
 
@@ -887,7 +889,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     }
     disabledInteractionViews.removeAll()
   }
-  
+
   private func resetInteractionState() {
     interactionInProgress = false
     interruptedTranslation = 0
