@@ -14,19 +14,25 @@ public struct ZoomOptions {
   var maskVisualEffect: UIVisualEffect?
   var dimmingColor: UIColor?
   var dimmingVisualEffect: UIBlurEffect?
-  
+  /// When `true` (default), a downward, primarily-vertical pan also drives interactive
+  /// dismissal — in addition to the rightward-horizontal pan. Set to `false` to restrict
+  /// dismissal to the horizontal axis only.
+  var allowsVerticalPanDismissal: Bool
+
   public init(duration: TimeInterval,
               maskCornerRadius: CGFloat = CornerRadiusProvider.deviceCornerRadius,
               minimumScale: CGFloat = 0.5,
               maskVisualEffect: UIVisualEffect? = nil,
               dimmingColor: UIColor? = UIColor.black.withAlphaComponent(0.25),
-              dimmingVisualEffect: UIBlurEffect? = nil) {
+              dimmingVisualEffect: UIBlurEffect? = nil,
+              allowsVerticalPanDismissal: Bool = true) {
     self.duration = duration
     self.maskCornerRadius = maskCornerRadius
     self.minimumScale = minimumScale
     self.maskVisualEffect = maskVisualEffect
     self.dimmingColor = dimmingColor
     self.dimmingVisualEffect = dimmingVisualEffect
+    self.allowsVerticalPanDismissal = allowsVerticalPanDismissal
   }
 }
 
