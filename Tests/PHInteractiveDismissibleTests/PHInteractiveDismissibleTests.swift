@@ -311,6 +311,33 @@ final class PHInteractiveDismissibleTests: XCTestCase {
     XCTAssertTrue(interactiveSubview.isUserInteractionEnabled,
                   "deinit must restore subviews disabled by an in-flight interaction")
   }
+
+  func testZoomSourceVisibilityRestoresPreviousSourceWhenDynamicSourceChanges() {
+    let viewController = ZoomTestViewController()
+    let previousSourceView = UIView()
+    let currentSourceView = UIView()
+
+    viewController._hideZoomTransitionSourceView(previousSourceView)
+    XCTAssertTrue(previousSourceView.isHidden)
+
+    viewController._restoreHiddenZoomTransitionSourceView(ifDifferentFrom: currentSourceView)
+
+    XCTAssertFalse(previousSourceView.isHidden,
+                   "Changing the resolved source view must reveal the source hidden by the previous zoom source")
+    XCTAssertNil(viewController._zoomTransitionHiddenSourceView)
+  }
+
+  func testZoomSourceVisibilityKeepsSameSourceHiddenWhenDismissalCancels() {
+    let viewController = ZoomTestViewController()
+    let sourceView = UIView()
+
+    viewController._hideZoomTransitionSourceView(sourceView)
+    viewController._restoreHiddenZoomTransitionSourceView(ifDifferentFrom: sourceView)
+
+    XCTAssertTrue(sourceView.isHidden,
+                  "A cancelled dismissal with the same source should preserve the presentation-hidden source")
+    XCTAssertTrue(viewController._zoomTransitionHiddenSourceView === sourceView)
+  }
 }
 
 @MainActor
@@ -340,9 +367,14 @@ private final class TestDismissibleViewController: UIViewController, Interactive
 
 private final class ZoomTestViewController: UIViewController, InteractiveDismissible, ZoomTransitioning {
   var configuredScrollView: UIScrollView?
+  var configuredSourceView: UIView?
 
   var dismissibleScrollView: UIScrollView? {
     configuredScrollView
+  }
+
+  func sourceView(for transition: PHZoomTransitioning.Transition) -> UIView? {
+    configuredSourceView
   }
 }
 

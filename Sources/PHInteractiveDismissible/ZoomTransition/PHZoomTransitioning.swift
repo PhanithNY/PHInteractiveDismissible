@@ -159,8 +159,7 @@ extension PHZoomTransitioning {
     // The animation duration
     let springDuration: TimeInterval = zoomOption.duration * 0.75
     
-    // Hide sourceView
-    sourceView.isHidden = true
+    context.viewController(forKey: .to)?._hideZoomTransitionSourceView(sourceView)
     
     // Fade out snapshot
     UIView.springAnimate(
@@ -200,7 +199,7 @@ extension PHZoomTransitioning {
       dimmingView.effect = zoomOption.dimmingVisualEffect
       snapshot.frame = toView.frame
     } completion: { [self] _ in
-      sourceView.isHidden = true
+      context.viewController(forKey: .to)?._hideZoomTransitionSourceView(sourceView)
       blurView.removeFromSuperview()
       snapshot.removeFromSuperview()
       toView.mask = nil
@@ -224,11 +223,17 @@ extension PHZoomTransitioning {
     let baseSnapshot: UIView
     let resolvedSourceView = context.sourceView(forKey: .from, transition: transition)
       ?? context.sourceView(forKey: .to, transition: transition)
+
+    if let resolvedSourceView {
+      context.viewController(forKey: .from)?._restoreHiddenZoomTransitionSourceView(ifDifferentFrom: resolvedSourceView)
+      context.viewController(forKey: .to)?._restoreHiddenZoomTransitionSourceView(ifDifferentFrom: resolvedSourceView)
+    }
     
-    if let sourceView {
-      baseSnapshot = sourceView
-    } else if let resolvedSourceView, let snapshot = makeSnapshot(from: resolvedSourceView) {
+    if let resolvedSourceView, let snapshot = makeSnapshot(from: resolvedSourceView) {
       baseSnapshot = snapshot
+      snapshot.backgroundColor = resolvedSourceView.backgroundColor
+    } else if let sourceView {
+      baseSnapshot = sourceView
     } else {
       context.completeTransition(false)
       return
@@ -312,6 +317,8 @@ extension PHZoomTransitioning {
       blurView.alpha = 1.0
       
     } completion: { _ in
+      context.viewController(forKey: .from)?._revealZoomTransitionHiddenSourceView()
+      context.viewController(forKey: .to)?._revealZoomTransitionHiddenSourceView()
       resolvedSourceView?.isHidden = false
       fromView.mask = nil
       blurView.removeFromSuperview()

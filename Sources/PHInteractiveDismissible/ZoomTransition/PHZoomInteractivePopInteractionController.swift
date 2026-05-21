@@ -851,6 +851,8 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
       } completion: { [weak self] _ in
         transitionContext.finishInteractiveTransition()
         transitionContext.completeTransition(true)
+        transitionContext.viewController(forKey: .from)?._revealZoomTransitionHiddenSourceView()
+        transitionContext.viewController(forKey: .to)?._revealZoomTransitionHiddenSourceView()
         self?.sourceView?.isHidden = false
         self?.cleanUpTransitionViews()
         self?.resetInteractionState()
@@ -1009,6 +1011,9 @@ extension PHZoomInteractivePopInteractionController {
       resetInteractionState()
       return
     }
+
+    transitionContext.viewController(forKey: .from)?._restoreHiddenZoomTransitionSourceView(ifDifferentFrom: sourceView)
+    transitionContext.viewController(forKey: .to)?._restoreHiddenZoomTransitionSourceView(ifDifferentFrom: sourceView)
     
     let result = CGAffineTransform.transform(
       parent: fromView.frame,
