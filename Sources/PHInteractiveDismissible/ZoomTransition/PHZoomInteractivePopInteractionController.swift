@@ -220,7 +220,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     case .changed:
       gestureChanged(translation: translation + interruptedTranslation, velocity: velocity, translationY: translationY)
 
-    case .cancelled:
+    case .cancelled, .failed:
       gestureCancelled(translation: translation + interruptedTranslation, velocity: velocity)
 
     case .ended:
@@ -263,7 +263,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     case .changed:
       verticalGestureChanged(translationY: translationY, translationX: translationX)
 
-    case .cancelled:
+    case .cancelled, .failed:
       verticalGestureCancelled(translationY: translationY, velocityY: velocityY)
 
     case .ended:
@@ -511,7 +511,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
                    rotationAngle: rotationAngle,
                    pinchScale: pinchScale)
 
-    case .cancelled:
+    case .cancelled, .failed:
       guard interactionDriver == .pinch else { return }
       initialPinchLocation = nil
       smoothedPinchLocation = nil

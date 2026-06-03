@@ -19,6 +19,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   private var interruptedTranslation: CGFloat = 0
   private var presentedFrame: CGRect?
   private var cancellationAnimator: UIViewPropertyAnimator?
+  private var finishAnimator: UIViewPropertyAnimator?
   private var insertedPresentedViewController: Bool = false
   private var disabledInteractionViews: [UIView] = []
   
@@ -87,7 +88,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
     case .changed:
       gestureChanged(translation: translation + interruptedTranslation, velocity: velocity)
       
-    case .cancelled:
+    case .cancelled, .failed:
       gestureCancelled(translation: translation + interruptedTranslation, velocity: velocity)
       
     case .ended:
@@ -101,6 +102,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   private func gestureBegan() {
     disableOtherTouches()
     cancellationAnimator?.stopAnimation(true)
+    finishAnimator?.stopAnimation(true)
     
     if let presentedFrame = presentedFrame {
       interruptedTranslation = viewController.view.frame.minX - presentedFrame.minX
@@ -219,6 +221,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
         transitionContext.completeTransition(false)
         self?.insertedPresentedViewController = false
         self?.interactionInProgress = false
+        self?.cancellationAnimator = nil
         self?.enableOtherTouches()
       } else {
         DispatchQueue.main.async {
@@ -226,6 +229,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
           transitionContext.completeTransition(false)
           self?.insertedPresentedViewController = false
           self?.interactionInProgress = false
+          self?.cancellationAnimator = nil
           self?.enableOtherTouches()
         }
       }
@@ -245,9 +249,9 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
     
     let dismissedFrame = CGRect(x: transitionContext.containerView.bounds.width, y: presentedFrame.minY, width: presentedFrame.width, height: presentedFrame.height)
     let timingParameters = UISpringTimingParameters(dampingRatio: 1.0, initialVelocity: CGVector(dx: initialSpringVelocity, dy: 0))
-    let finishAnimator = UIViewPropertyAnimator(duration: 0.35, timingParameters: timingParameters)
+    finishAnimator = UIViewPropertyAnimator(duration: 0.35, timingParameters: timingParameters)
     
-    finishAnimator.addAnimations {
+    finishAnimator?.addAnimations {
       presentingViewController.view.frame = CGRect(x: 0, y: 0, width: dismissedFrame.width, height: dismissedFrame.height)
       presentedViewController.view.frame = dismissedFrame
       if let modalPresentationController = presentedViewController.presentationController as? PHModalPresentationController {
@@ -255,11 +259,12 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
       }
     }
     
-    finishAnimator.addCompletion { [weak self] _ in
+    finishAnimator?.addCompletion { [weak self] _ in
       if Thread.isMainThread {
         transitionContext.finishInteractiveTransition()
         transitionContext.completeTransition(true)
         self?.interactionInProgress = false
+        self?.finishAnimator = nil
         // Symmetric with the `cancel` completion. After a successful dismissal the presented VC
         // is usually gone, so this is harmless in the common case. The reason to call it is for
         // VC instances that are re-presented (caches, dependency-injected singletons): without
@@ -271,12 +276,13 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
           transitionContext.finishInteractiveTransition()
           transitionContext.completeTransition(true)
           self?.interactionInProgress = false
+          self?.finishAnimator = nil
           self?.enableOtherTouches()
         }
       }
     }
     
-    finishAnimator.startAnimation()
+    finishAnimator?.startAnimation()
   }
   
   // MARK: - Helpers
