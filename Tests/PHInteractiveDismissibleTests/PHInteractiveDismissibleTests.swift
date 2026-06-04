@@ -105,6 +105,18 @@ final class PHInteractiveDismissibleTests: XCTestCase {
     XCTAssertFalse(interactionController.interactionInProgress)
   }
 
+  func testZoomDismissPanGesturesCancelControlTouchesWhenTheyBegin() {
+    let viewController = ZoomTestViewController()
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
+
+    let panGestures = viewController.view.gestureRecognizers?.compactMap { $0 as? UIPanGestureRecognizer } ?? []
+
+    XCTAssertFalse(interactionController.interactionInProgress)
+    XCTAssertEqual(panGestures.count, 2)
+    XCTAssertTrue(panGestures.allSatisfy(\.cancelsTouchesInView),
+                  "Dismiss pans should cancel an active control touch once a right/down drag begins")
+  }
+
   func testZoomInteractionLazilyWiresDismissibleScrollViewGestures() {
     let viewController = ZoomTestViewController()
     let scrollView = UIScrollView()
@@ -240,6 +252,34 @@ final class PHInteractiveDismissibleTests: XCTestCase {
     interactionController.enableOtherTouches()
     XCTAssertTrue(interactiveSubview.isUserInteractionEnabled,
                   "enableOtherTouches must restore the subview — if it stays disabled, the snapshot was clobbered")
+  }
+
+  func testInteractivePopPanGestureCancelsControlTouchesWhenItBegins() {
+    let viewController = TestDismissibleViewController()
+    let interactionController = InteractivePopInteractionController(viewController: viewController)
+
+    let panGestures = viewController.view.gestureRecognizers?.compactMap { $0 as? UIPanGestureRecognizer } ?? []
+
+    XCTAssertFalse(interactionController.interactionInProgress)
+    XCTAssertEqual(panGestures.count, 1)
+    XCTAssertTrue(panGestures.allSatisfy(\.cancelsTouchesInView),
+                  "Interactive pop pan should cancel an active control touch once a right drag begins")
+  }
+
+  func testInteractivePopScrollPanGestureCancelsControlTouchesWhenItBegins() {
+    let viewController = TestDismissibleViewController()
+    let scrollView = UIScrollView()
+    viewController.configuredScrollView = scrollView
+    let interactionController = InteractivePopInteractionController(viewController: viewController)
+
+    let customPanGestures = scrollView.gestureRecognizers?
+      .compactMap { $0 as? UIPanGestureRecognizer }
+      .filter { $0 !== scrollView.panGestureRecognizer } ?? []
+
+    XCTAssertFalse(interactionController.interactionInProgress)
+    XCTAssertEqual(customPanGestures.count, 1)
+    XCTAssertTrue(customPanGestures.allSatisfy(\.cancelsTouchesInView),
+                  "Interactive pop scroll pan should cancel an active control touch once a right drag begins")
   }
 
   func testInteractiveDismissGestureCancelKeepsPresentedViewController() {

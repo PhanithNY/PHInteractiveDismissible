@@ -51,7 +51,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   private func prepareGestureRecognizer(in view: UIView) {
     let gesture = UIPanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
     gesture.delegate = self
-    gesture.cancelsTouchesInView = false
+    gesture.cancelsTouchesInView = true
     view.addGestureRecognizer(gesture)
     
     if let preferredCornerRadius = viewController.preferredCornerRadius, preferredCornerRadius > 0.0 {
@@ -64,7 +64,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   private func resolveScrollViewGestures(_ scrollView: UIScrollView) {
     let scrollGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(handleGesture(_:)))
     scrollGestureRecognizer.delegate = self
-    scrollGestureRecognizer.cancelsTouchesInView = false
+    scrollGestureRecognizer.cancelsTouchesInView = true
     
     scrollView.addGestureRecognizer(scrollGestureRecognizer)
     scrollView.panGestureRecognizer.require(toFail: scrollGestureRecognizer)
