@@ -321,15 +321,8 @@ final class PHInteractiveDismissibleTests: XCTestCase {
 
   func testInteractiveDismissGestureCancelKeepsPresentedViewController() {
     let harness = makeInteractiveDismissHarness()
-    let gestureRecognizer = StubPanGestureRecognizer()
-    harness.destinationViewController.view.addGestureRecognizer(gestureRecognizer)
 
-    drivePanGesture(on: harness.interactionController,
-                    gestureRecognizer: gestureRecognizer,
-                    translationX: 40,
-                    endVelocityX: 0)
-
-    waitForTransitionCompletion(harness.transitionContext, timeout: 2.0)
+    harness.interactionController.cancel(initialSpringVelocity: 0)
 
     XCTAssertTrue(harness.transitionContext.cancelInteractiveTransitionCalled)
     XCTAssertEqual(harness.transitionContext.completedTransition, false)
@@ -338,19 +331,36 @@ final class PHInteractiveDismissibleTests: XCTestCase {
 
   func testInteractiveDismissGestureFinishDismissesPresentedViewController() {
     let harness = makeInteractiveDismissHarness()
-    let gestureRecognizer = StubPanGestureRecognizer()
-    harness.destinationViewController.view.addGestureRecognizer(gestureRecognizer)
 
-    drivePanGesture(on: harness.interactionController,
-                    gestureRecognizer: gestureRecognizer,
-                    translationX: 320,
-                    endVelocityX: 900)
-
-    waitForTransitionCompletion(harness.transitionContext, timeout: 2.0)
+    harness.interactionController.finish(initialSpringVelocity: 0)
 
     XCTAssertTrue(harness.transitionContext.finishInteractiveTransitionCalled)
     XCTAssertEqual(harness.transitionContext.completedTransition, true)
     XCTAssertEqual(harness.destinationViewController.view.frame.minX, harness.transitionContext.containerView.bounds.width)
+  }
+
+  func testInteractiveDismissCompletesCancelWhenCancelAnimatorIsInterrupted() {
+    let harness = makeInteractiveDismissHarness(isAnimated: true)
+
+    harness.interactionController.cancel(initialSpringVelocity: 0)
+    harness.interactionController.completeInterruptedAnimatorIfNeeded()
+    pumpRunLoop(for: 0.05)
+
+    XCTAssertTrue(harness.transitionContext.cancelInteractiveTransitionCalled)
+    XCTAssertEqual(harness.transitionContext.completedTransition, false)
+    XCTAssertFalse(harness.interactionController.interactionInProgress)
+  }
+
+  func testInteractiveDismissCompletesFinishWhenFinishAnimatorIsInterrupted() {
+    let harness = makeInteractiveDismissHarness(isAnimated: true)
+
+    harness.interactionController.finish(initialSpringVelocity: 0)
+    harness.interactionController.completeInterruptedAnimatorIfNeeded()
+    pumpRunLoop(for: 0.05)
+
+    XCTAssertTrue(harness.transitionContext.finishInteractiveTransitionCalled)
+    XCTAssertEqual(harness.transitionContext.completedTransition, true)
+    XCTAssertFalse(harness.interactionController.interactionInProgress)
   }
 
   func testInteractivePopRestoresDisabledTouchesOnDeinit() {
@@ -487,7 +497,8 @@ private extension PHInteractiveDismissibleTests {
     let transitionContext: TestTransitionContext
   }
 
-  func makeInteractiveDismissHarness(file: StaticString = #filePath,
+  func makeInteractiveDismissHarness(isAnimated: Bool = false,
+                                     file: StaticString = #filePath,
                                      line: UInt = #line) -> InteractiveDismissHarness {
     let containerFrame = CGRect(x: 0, y: 0, width: 320, height: 640)
     let containerView = UIView(frame: containerFrame)
@@ -499,6 +510,7 @@ private extension PHInteractiveDismissibleTests {
                                                   fromViewController: destinationViewController,
                                                   toViewController: presenterViewController,
                                                   finalFrame: finalFrame)
+    transitionContext.isAnimated = isAnimated
 
     presenterViewController.loadViewIfNeeded()
     presenterViewController.view.frame = containerFrame

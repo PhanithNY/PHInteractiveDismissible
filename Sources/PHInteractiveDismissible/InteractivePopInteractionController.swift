@@ -13,7 +13,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   /// Optional gate set by the `present(_:dismissalType:)` caller. Takes precedence over the protocol property.
   public var interactiveDismissShouldBegin: (() -> Bool)?
   private weak var viewController: InteractiveDismissible!
-  private weak var transitionContext: UIViewControllerContextTransitioning?
+  private var transitionContext: UIViewControllerContextTransitioning?
   
   private var interactionDistance: CGFloat = 0
   private var interruptedTranslation: CGFloat = 0
@@ -22,6 +22,11 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   private var finishAnimator: UIViewPropertyAnimator?
   private var insertedPresentedViewController: Bool = false
   private var disabledInteractionViews: [UIView] = []
+
+  private enum InteractionResolution {
+    case cancelled
+    case finished
+  }
   
   // MARK: - Init
   
@@ -100,9 +105,11 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   }
   
   private func gestureBegan() {
+    if completeInterruptedAnimatorIfNeeded() {
+      return
+    }
+
     disableOtherTouches()
-    cancellationAnimator?.stopAnimation(true)
-    finishAnimator?.stopAnimation(true)
     
     if let presentedFrame = presentedFrame {
       interruptedTranslation = viewController.view.frame.minX - presentedFrame.minX
@@ -193,7 +200,8 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
     }
   }
   
-  private func cancel(initialSpringVelocity: CGFloat) {
+  // Exposed at `internal` so transition-completion tests can bypass private gesture state.
+  internal func cancel(initialSpringVelocity: CGFloat) {
     guard let transitionContext = transitionContext, let presentedFrame = presentedFrame else {
       // No live transition to wind down — but `disableOtherTouches()` already ran in
       // `gestureBegan`. Bailing without restoring is the dead-tap leak; reset instead.
@@ -205,40 +213,33 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
     let presentedViewController = transitionContext.viewController(forKey: .from).unsafelyUnwrapped
     let presentingViewController = transitionContext.viewController(forKey: .to).unsafelyUnwrapped
     let timingParameters = UISpringTimingParameters(dampingRatio: 1.0, initialVelocity: CGVector(dx: initialSpringVelocity, dy: 0))
-    cancellationAnimator = UIViewPropertyAnimator(duration: 0.35, timingParameters: timingParameters)
-    
-    cancellationAnimator?.addAnimations {
+    let animations = {
       presentingViewController.view.frame = finalPresentingFrame
       presentedViewController.view.frame = presentedFrame
       if let modalPresentationController = presentedViewController.presentationController as? PHModalPresentationController {
         modalPresentationController.fadeView.alpha = 0.50
       }
     }
+
+    guard transitionContext.isAnimated else {
+      animations()
+      completeInteraction(.cancelled)
+      return
+    }
+
+    cancellationAnimator = UIViewPropertyAnimator(duration: 0.35, timingParameters: timingParameters)
+
+    cancellationAnimator?.addAnimations(animations)
     
     cancellationAnimator?.addCompletion { [weak self] _ in
-      if Thread.isMainThread {
-        transitionContext.cancelInteractiveTransition()
-        transitionContext.completeTransition(false)
-        self?.insertedPresentedViewController = false
-        self?.interactionInProgress = false
-        self?.cancellationAnimator = nil
-        self?.enableOtherTouches()
-      } else {
-        DispatchQueue.main.async {
-          transitionContext.cancelInteractiveTransition()
-          transitionContext.completeTransition(false)
-          self?.insertedPresentedViewController = false
-          self?.interactionInProgress = false
-          self?.cancellationAnimator = nil
-          self?.enableOtherTouches()
-        }
-      }
+      self?.completeInteraction(.cancelled)
     }
     
     cancellationAnimator?.startAnimation()
   }
   
-  private func finish(initialSpringVelocity: CGFloat) {
+  // Exposed at `internal` so transition-completion tests can bypass private gesture state.
+  internal func finish(initialSpringVelocity: CGFloat) {
     guard let transitionContext = transitionContext, let presentedFrame = presentedFrame else {
       // See `cancel(initialSpringVelocity:)` — never leave `disabledInteractionViews` stranded.
       resetInteractionState()
@@ -249,37 +250,26 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
     
     let dismissedFrame = CGRect(x: transitionContext.containerView.bounds.width, y: presentedFrame.minY, width: presentedFrame.width, height: presentedFrame.height)
     let timingParameters = UISpringTimingParameters(dampingRatio: 1.0, initialVelocity: CGVector(dx: initialSpringVelocity, dy: 0))
-    finishAnimator = UIViewPropertyAnimator(duration: 0.35, timingParameters: timingParameters)
-    
-    finishAnimator?.addAnimations {
+    let animations = {
       presentingViewController.view.frame = CGRect(x: 0, y: 0, width: dismissedFrame.width, height: dismissedFrame.height)
       presentedViewController.view.frame = dismissedFrame
       if let modalPresentationController = presentedViewController.presentationController as? PHModalPresentationController {
         modalPresentationController.fadeView.alpha = 0.0
       }
     }
+
+    guard transitionContext.isAnimated else {
+      animations()
+      completeInteraction(.finished)
+      return
+    }
+
+    finishAnimator = UIViewPropertyAnimator(duration: 0.35, timingParameters: timingParameters)
+
+    finishAnimator?.addAnimations(animations)
     
     finishAnimator?.addCompletion { [weak self] _ in
-      if Thread.isMainThread {
-        transitionContext.finishInteractiveTransition()
-        transitionContext.completeTransition(true)
-        self?.interactionInProgress = false
-        self?.finishAnimator = nil
-        // Symmetric with the `cancel` completion. After a successful dismissal the presented VC
-        // is usually gone, so this is harmless in the common case. The reason to call it is for
-        // VC instances that are re-presented (caches, dependency-injected singletons): without
-        // this, `disableOtherTouches`'s last snapshot stays applied and the next presentation
-        // shows up with dead taps until something else flips `isUserInteractionEnabled` back.
-        self?.enableOtherTouches()
-      } else {
-        DispatchQueue.main.async {
-          transitionContext.finishInteractiveTransition()
-          transitionContext.completeTransition(true)
-          self?.interactionInProgress = false
-          self?.finishAnimator = nil
-          self?.enableOtherTouches()
-        }
-      }
+      self?.completeInteraction(.finished)
     }
     
     finishAnimator?.startAnimation()
@@ -289,6 +279,52 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   
   private func springVelocity(distanceToTravel: CGFloat, gestureVelocity: CGFloat) -> CGFloat {
     distanceToTravel == 0 ? 0 : gestureVelocity / distanceToTravel
+  }
+
+  @discardableResult
+  internal func completeInterruptedAnimatorIfNeeded() -> Bool {
+    if cancellationAnimator != nil {
+      cancellationAnimator?.stopAnimation(true)
+      completeInteraction(.cancelled)
+      return true
+    }
+
+    if finishAnimator != nil {
+      finishAnimator?.stopAnimation(true)
+      completeInteraction(.finished)
+      return true
+    }
+
+    return false
+  }
+
+  private func completeInteraction(_ resolution: InteractionResolution) {
+    let completion = { [weak self] in
+      guard let self else { return }
+      guard let transitionContext = self.transitionContext else {
+        self.resetInteractionState()
+        return
+      }
+
+      switch resolution {
+      case .cancelled:
+        transitionContext.cancelInteractiveTransition()
+        transitionContext.completeTransition(false)
+
+      case .finished:
+        transitionContext.finishInteractiveTransition()
+        transitionContext.completeTransition(true)
+      }
+
+      self.transitionContext = nil
+      self.resetInteractionState()
+    }
+
+    if Thread.isMainThread {
+      completion()
+    } else {
+      DispatchQueue.main.async(execute: completion)
+    }
   }
   
   // Exposed at `internal` (rather than `private`) so the regression test for the idempotency
@@ -316,8 +352,13 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   }
 
   private func resetInteractionState() {
+    insertedPresentedViewController = false
     interactionInProgress = false
     interruptedTranslation = 0
+    interactionDistance = 0
+    presentedFrame = nil
+    cancellationAnimator = nil
+    finishAnimator = nil
     enableOtherTouches()
   }
 }
