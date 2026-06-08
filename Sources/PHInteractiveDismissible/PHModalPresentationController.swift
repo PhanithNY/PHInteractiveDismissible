@@ -57,18 +57,11 @@ public final class PHModalPresentationController: UIPresentationController {
     presentingViewController.view.isHidden = false
     guard let coordinator = presentedViewController.transitionCoordinator else {
       fadeView.alpha = 0.0
-      didBeginDismissalAppearanceTransition = true
-      presentingViewController.beginAppearanceTransition(true, animated: true)
+      beginPresentingAppearanceTransitionForDismissal()
       return
     }
     
-    if coordinator.isInteractive {
-      didBeginDismissalAppearanceTransition = true
-      presentingViewController.beginAppearanceTransition(true, animated: true)
-    } else {
-      didBeginDismissalAppearanceTransition = true
-      presentingViewController.beginAppearanceTransition(true, animated: true)
-    }
+    beginPresentingAppearanceTransitionForDismissal()
     
     if !coordinator.isInteractive {
       coordinator.animate(alongsideTransition: { _ in
@@ -79,12 +72,7 @@ public final class PHModalPresentationController: UIPresentationController {
     coordinator.notifyWhenInteractionEnds { [weak self] context in
       guard let self else { return }
       if context.isCancelled {
-        self.presentingViewController.view.isHidden = true
-        if self.didBeginDismissalAppearanceTransition {
-          self.presentingViewController.beginAppearanceTransition(false, animated: true)
-          self.presentingViewController.endAppearanceTransition()
-          self.didBeginDismissalAppearanceTransition = false
-        }
+        self.cancelPresentingAppearanceTransitionForDismissal()
       } else {
         // Non-interactive dismissal completion is finalized in dismissalTransitionDidEnd.
       }
@@ -96,11 +84,11 @@ public final class PHModalPresentationController: UIPresentationController {
       return
     }
 
-    presentingViewController.endAppearanceTransition()
-    if !completed {
-      presentingViewController.view.isHidden = true
+    if completed {
+      finishPresentingAppearanceTransitionForDismissal()
+    } else {
+      cancelPresentingAppearanceTransitionForDismissal()
     }
-    didBeginDismissalAppearanceTransition = false
   }
 
   public override func containerViewDidLayoutSubviews() {
@@ -109,5 +97,28 @@ public final class PHModalPresentationController: UIPresentationController {
     if let containerView {
       fadeView.frame = containerView.bounds
     }
+  }
+
+  private func beginPresentingAppearanceTransitionForDismissal() {
+    guard !didBeginDismissalAppearanceTransition else { return }
+
+    didBeginDismissalAppearanceTransition = true
+    presentingViewController.beginAppearanceTransition(true, animated: true)
+  }
+
+  private func finishPresentingAppearanceTransitionForDismissal() {
+    guard didBeginDismissalAppearanceTransition else { return }
+
+    presentingViewController.endAppearanceTransition()
+    didBeginDismissalAppearanceTransition = false
+  }
+
+  private func cancelPresentingAppearanceTransitionForDismissal() {
+    presentingViewController.view.isHidden = true
+    guard didBeginDismissalAppearanceTransition else { return }
+
+    presentingViewController.beginAppearanceTransition(false, animated: true)
+    presentingViewController.endAppearanceTransition()
+    didBeginDismissalAppearanceTransition = false
   }
 }

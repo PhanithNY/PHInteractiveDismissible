@@ -44,6 +44,43 @@ final class PHInteractiveDismissibleTests: XCTestCase {
     XCTAssertTrue(completionCalled)
   }
 
+  func testModalPresentationControllerCompletesPresenterAppearanceOnDismissalFinish() {
+    let presenter = AppearanceRecordingViewController()
+    let presented = UIViewController()
+    let presentationController = PHModalPresentationController(presentedViewController: presented,
+                                                               presenting: presenter)
+
+    presenter.view.isHidden = true
+
+    presentationController.dismissalTransitionWillBegin()
+    presentationController.dismissalTransitionDidEnd(true)
+
+    XCTAssertEqual(presenter.appearanceEvents, [
+      .begin(isAppearing: true, animated: true),
+      .end
+    ])
+    XCTAssertFalse(presenter.view.isHidden)
+  }
+
+  func testModalPresentationControllerReversesPresenterAppearanceOnDismissalCancel() {
+    let presenter = AppearanceRecordingViewController()
+    let presented = UIViewController()
+    let presentationController = PHModalPresentationController(presentedViewController: presented,
+                                                               presenting: presenter)
+
+    presenter.view.isHidden = true
+
+    presentationController.dismissalTransitionWillBegin()
+    presentationController.dismissalTransitionDidEnd(false)
+
+    XCTAssertEqual(presenter.appearanceEvents, [
+      .begin(isAppearing: true, animated: true),
+      .begin(isAppearing: false, animated: true),
+      .end
+    ])
+    XCTAssertTrue(presenter.view.isHidden)
+  }
+
   func testZoomWithExplicitSourceRectConfiguresZoomTransition() {
     let presenter = CapturingPresenterViewController()
     let destination = ZoomTestNavigationController(rootViewController: ZoomTestViewController())
@@ -421,6 +458,25 @@ private final class ZoomTestViewController: UIViewController, InteractiveDismiss
 private final class ZoomTestNavigationController: UINavigationController, ZoomTransitioning {}
 
 private final class TestTransitioningDelegate: NSObject, UIViewControllerTransitioningDelegate {}
+
+private enum AppearanceEvent: Equatable {
+  case begin(isAppearing: Bool, animated: Bool)
+  case end
+}
+
+private final class AppearanceRecordingViewController: UIViewController {
+  private(set) var appearanceEvents: [AppearanceEvent] = []
+
+  override func beginAppearanceTransition(_ isAppearing: Bool, animated: Bool) {
+    appearanceEvents.append(.begin(isAppearing: isAppearing, animated: animated))
+    super.beginAppearanceTransition(isAppearing, animated: animated)
+  }
+
+  override func endAppearanceTransition() {
+    appearanceEvents.append(.end)
+    super.endAppearanceTransition()
+  }
+}
 
 @MainActor
 private extension PHInteractiveDismissibleTests {
