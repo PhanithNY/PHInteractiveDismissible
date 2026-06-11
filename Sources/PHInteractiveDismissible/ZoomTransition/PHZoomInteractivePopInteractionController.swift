@@ -880,18 +880,17 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     // taps dead while gestures (attached to `viewController.view` itself) keep working.
     guard disabledInteractionViews.isEmpty else { return }
     
-    #warning("Testing")
-//    let viewsToDisable: [UIView]
-//    if let topViewController = (viewController as? UINavigationController)?.topViewController {
-//      viewsToDisable = topViewController.view.subviews.filter(\.isUserInteractionEnabled)
-//    } else {
-//      viewsToDisable = viewController.view.subviews.filter(\.isUserInteractionEnabled)
-//    }
-//    
-//    disabledInteractionViews = viewsToDisable //viewController.view.subviews.filter(\.isUserInteractionEnabled)
-//    disabledInteractionViews.forEach {
-//      $0.isUserInteractionEnabled = false
-//    }
+    let viewsToDisable: [UIView]
+    if let topViewController = (viewController as? UINavigationController)?.topViewController {
+      viewsToDisable = topViewController.view.subviews.filter(\.isUserInteractionEnabled)
+    } else {
+      viewsToDisable = viewController.view.subviews.filter(\.isUserInteractionEnabled)
+    }
+    
+    disabledInteractionViews = viewsToDisable //viewController.view.subviews.filter(\.isUserInteractionEnabled)
+    disabledInteractionViews.forEach {
+      $0.isUserInteractionEnabled = false
+    }
   }
 
   internal func enableOtherTouches() {
@@ -914,6 +913,11 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
 
 extension PHZoomInteractivePopInteractionController: UIGestureRecognizerDelegate {
   public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    #warning("Testing")
+    if interactionInProgress {
+      return false
+    }
+    
     if let scrollView = viewController.dismissibleScrollView {
       // Wire the current top controller's scroll view lazily so navigation-stack replacements
       // are handled even when the presented UINavigationController instance never changes.
