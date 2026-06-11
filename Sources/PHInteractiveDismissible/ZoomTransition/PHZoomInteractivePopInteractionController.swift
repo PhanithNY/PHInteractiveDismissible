@@ -195,6 +195,15 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   internal func isVerticalDismissGestureWired(to scrollView: UIScrollView) -> Bool {
     objc_getAssociatedObject(scrollView, &AssociatedKeys.wiredVerticalDismissGesture) as? UIPanGestureRecognizer === verticalDismissPanGesture
   }
+
+  internal func shouldReceiveGestureTouch(from touchedView: UIView?) -> Bool {
+    guard let navigationController = viewController as? UINavigationController,
+          let touchedView else {
+      return true
+    }
+
+    return !touchedView.isDescendant(of: navigationController.navigationBar)
+  }
   
   // MARK: - Gesture handling
   
@@ -912,12 +921,11 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
 // MARK: - UIGestureRecognizerDelegate
 
 extension PHZoomInteractivePopInteractionController: UIGestureRecognizerDelegate {
+  public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    shouldReceiveGestureTouch(from: touch.view)
+  }
+
   public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-    #warning("Testing")
-    if interactionInProgress {
-      return false
-    }
-    
     if let scrollView = viewController.dismissibleScrollView {
       // Wire the current top controller's scroll view lazily so navigation-stack replacements
       // are handled even when the presented UINavigationController instance never changes.

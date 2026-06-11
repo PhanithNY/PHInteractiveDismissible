@@ -218,6 +218,22 @@ final class PHInteractiveDismissibleTests: XCTestCase {
     XCTAssertEqual(gestureCountAfterSecondCheck, initialGestureCount)
   }
 
+  func testZoomNavigationControllerDismissGesturesIgnoreNavigationBarTouches() {
+    let rootViewController = ZoomTestViewController()
+    let navigationController = ZoomTestNavigationController(rootViewController: rootViewController)
+    navigationController.loadViewIfNeeded()
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: navigationController)
+    let barButtonHostView = UIView(frame: CGRect(x: 0, y: 0, width: 44, height: 44))
+    navigationController.navigationBar.addSubview(barButtonHostView)
+
+    XCTAssertFalse(interactionController.shouldReceiveGestureTouch(from: navigationController.navigationBar),
+                   "Dismiss gestures attached to a presented navigation controller must not observe navigation-bar touches")
+    XCTAssertFalse(interactionController.shouldReceiveGestureTouch(from: barButtonHostView),
+                   "Navigation-bar item touches should remain owned by UIKit so their actions can fire")
+    XCTAssertTrue(interactionController.shouldReceiveGestureTouch(from: rootViewController.view),
+                  "Content touches should still be eligible for interactive dismissal")
+  }
+
   func testZoomInteractionRecoversFromStaleInteractionInProgressFlag() {
     let viewController = ZoomTestViewController()
     let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
