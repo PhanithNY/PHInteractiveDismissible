@@ -234,23 +234,6 @@ final class PHInteractiveDismissibleTests: XCTestCase {
                   "Content touches should still be eligible for interactive dismissal")
   }
 
-  func testZoomDismissGesturesIgnoreControlTouches() {
-    let viewController = ZoomTestViewController()
-    viewController.loadViewIfNeeded()
-    let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
-    let button = UIButton(type: .system)
-    let nestedLabel = UILabel()
-    button.addSubview(nestedLabel)
-    viewController.view.addSubview(button)
-
-    XCTAssertFalse(interactionController.shouldReceiveGestureTouch(from: button),
-                   "Controls should own their touches so touchUpInside actions can fire")
-    XCTAssertFalse(interactionController.shouldReceiveGestureTouch(from: nestedLabel),
-                   "Subview touches inside controls should also be ignored by dismiss gestures")
-    XCTAssertTrue(interactionController.shouldReceiveGestureTouch(from: viewController.view),
-                  "Non-control content remains eligible for interactive dismissal")
-  }
-
   func testZoomInteractionRecoversFromStaleInteractionInProgressFlag() {
     let viewController = ZoomTestViewController()
     let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)

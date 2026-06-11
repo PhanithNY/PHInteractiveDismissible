@@ -201,10 +201,6 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
       return true
     }
 
-    if touchedView.hasControlAncestor {
-      return false
-    }
-
     if let navigationController = viewController as? UINavigationController,
        touchedView.isDescendant(of: navigationController.navigationBar) {
       return false
@@ -1373,11 +1369,5 @@ extension PHZoomInteractivePopInteractionController {
     blurView?.removeFromSuperview()
     snapshotView?.removeFromSuperview()
     shadowView?.removeFromSuperview()
-  }
-}
-
-private extension UIView {
-  var hasControlAncestor: Bool {
-    sequence(first: self, next: \.superview).contains { $0 is UIControl }
   }
 }
