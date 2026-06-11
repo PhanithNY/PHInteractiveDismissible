@@ -197,12 +197,20 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   }
 
   internal func shouldReceiveGestureTouch(from touchedView: UIView?) -> Bool {
-    guard let navigationController = viewController as? UINavigationController,
-          let touchedView else {
+    guard let touchedView else {
       return true
     }
 
-    return !touchedView.isDescendant(of: navigationController.navigationBar)
+    if touchedView.hasControlAncestor {
+      return false
+    }
+
+    if let navigationController = viewController as? UINavigationController,
+       touchedView.isDescendant(of: navigationController.navigationBar) {
+      return false
+    }
+
+    return true
   }
   
   // MARK: - Gesture handling
@@ -666,6 +674,14 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   }
   
   public func startInteractiveTransition(_ transitionContext: UIViewControllerContextTransitioning) {
+    // This should prevent dismiss / presentation issue after repeatedly tap.
+    // Fix it, if it doesn't work because I have know idea what happen now :<
+    guard interactionInProgress else {
+      transitionContext.cancelInteractiveTransition()
+      transitionContext.completeTransition(false)
+      return
+    }
+
     self.transitionContext = transitionContext
     interactionDistance = transitionContext.containerView.bounds.width
     
@@ -910,10 +926,16 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   }
 
   private func resetInteractionState() {
+    transitionContext = nil
     interactionInProgress = false
     interruptedTranslation = 0
+    interactionDistance = 0
+    verticalInteractionDistance = 0
     interactionDriver = nil
     initialPinchLocation = nil
+    smoothedPinchLocation = nil
+    smoothedRotationAngle = 0
+    rotationBaselineAtPinchBegin = 0
     enableOtherTouches()
   }
 }
@@ -1351,5 +1373,11 @@ extension PHZoomInteractivePopInteractionController {
     blurView?.removeFromSuperview()
     snapshotView?.removeFromSuperview()
     shadowView?.removeFromSuperview()
+  }
+}
+
+private extension UIView {
+  var hasControlAncestor: Bool {
+    sequence(first: self, next: \.superview).contains { $0 is UIControl }
   }
 }
