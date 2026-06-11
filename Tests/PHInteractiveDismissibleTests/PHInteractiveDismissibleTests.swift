@@ -332,6 +332,31 @@ final class PHInteractiveDismissibleTests: XCTestCase {
                   "enableOtherTouches must restore the subview — if it stays disabled, the snapshot was clobbered")
   }
 
+  func testInteractivePopCancelsLateTransitionContextAfterFastGestureReset() {
+    let containerView = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 640))
+    let presentedViewController = TestDismissibleViewController()
+    let presentingViewController = UIViewController()
+    let interactionController = InteractivePopInteractionController(viewController: presentedViewController)
+    let transitionContext = TestTransitionContext(containerView: containerView,
+                                                  fromViewController: presentedViewController,
+                                                  toViewController: presentingViewController,
+                                                  finalFrame: containerView.bounds)
+
+    presentedViewController.loadViewIfNeeded()
+    presentingViewController.loadViewIfNeeded()
+    containerView.addSubview(presentingViewController.view)
+    containerView.addSubview(presentedViewController.view)
+
+    XCTAssertFalse(interactionController.interactionInProgress)
+
+    interactionController.startInteractiveTransition(transitionContext)
+
+    XCTAssertTrue(transitionContext.cancelInteractiveTransitionCalled,
+                  "A late context for an already-ended gesture must be cancelled immediately")
+    XCTAssertEqual(transitionContext.completedTransition, false)
+    XCTAssertFalse(interactionController.interactionInProgress)
+  }
+
   func testInteractivePopPanGestureCancelsControlTouchesWhenItBegins() {
     let viewController = TestDismissibleViewController()
     let interactionController = InteractivePopInteractionController(viewController: viewController)
@@ -559,8 +584,8 @@ private extension PHInteractiveDismissibleTests {
     destinationViewController.view.frame = finalFrame
     containerView.addSubview(presenterViewController.view)
     containerView.addSubview(destinationViewController.view)
-    interactionController.startInteractiveTransition(transitionContext)
     interactionController.interactionInProgress = true
+    interactionController.startInteractiveTransition(transitionContext)
 
     XCTAssertNotNil(destinationViewController.view.superview, file: file, line: line)
 

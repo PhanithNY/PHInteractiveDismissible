@@ -165,6 +165,15 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   // MARK: - Transition controlling
   
   public func startInteractiveTransition(_ transitionContext: UIViewControllerContextTransitioning) {
+    // A very short gesture can end/cancel before UIKit calls this method. In that case the
+    // controller has already reset; cancel the late context immediately so UIKit doesn't keep
+    // an ownerless dismissal transition alive and block later presentations/dismissals.
+    guard interactionInProgress else {
+      transitionContext.cancelInteractiveTransition()
+      transitionContext.completeTransition(false)
+      return
+    }
+
     let presentedViewController = transitionContext.viewController(forKey: .from).unsafelyUnwrapped
     presentedFrame = transitionContext.finalFrame(for: presentedViewController)
     self.transitionContext = transitionContext
@@ -359,6 +368,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   }
 
   private func resetInteractionState() {
+    transitionContext = nil
     insertedPresentedViewController = false
     interactionInProgress = false
     interruptedTranslation = 0
