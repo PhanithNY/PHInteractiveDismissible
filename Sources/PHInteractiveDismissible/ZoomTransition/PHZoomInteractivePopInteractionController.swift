@@ -879,7 +879,15 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     // `enableOtherTouches()` would then restore nothing, leaving subviews stuck disabled and
     // taps dead while gestures (attached to `viewController.view` itself) keep working.
     guard disabledInteractionViews.isEmpty else { return }
-    disabledInteractionViews = viewController.view.subviews.filter(\.isUserInteractionEnabled)
+    
+    let viewsToDisable: [UIView]
+    if let topViewController = (viewController as? UINavigationController)?.topViewController {
+      viewsToDisable = topViewController.view.subviews.filter(\.isUserInteractionEnabled)
+    } else {
+      viewsToDisable = viewController.view.subviews.filter(\.isUserInteractionEnabled)
+    }
+    
+    disabledInteractionViews = viewsToDisable //viewController.view.subviews.filter(\.isUserInteractionEnabled)
     disabledInteractionViews.forEach {
       $0.isUserInteractionEnabled = false
     }
