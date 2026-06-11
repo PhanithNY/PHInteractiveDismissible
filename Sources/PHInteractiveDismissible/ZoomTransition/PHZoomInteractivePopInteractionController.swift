@@ -880,17 +880,18 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     // taps dead while gestures (attached to `viewController.view` itself) keep working.
     guard disabledInteractionViews.isEmpty else { return }
     
-    let viewsToDisable: [UIView]
-    if let topViewController = (viewController as? UINavigationController)?.topViewController {
-      viewsToDisable = topViewController.view.subviews.filter(\.isUserInteractionEnabled)
-    } else {
-      viewsToDisable = viewController.view.subviews.filter(\.isUserInteractionEnabled)
-    }
-    
-    disabledInteractionViews = viewsToDisable //viewController.view.subviews.filter(\.isUserInteractionEnabled)
-    disabledInteractionViews.forEach {
-      $0.isUserInteractionEnabled = false
-    }
+    #warning("Testing")
+//    let viewsToDisable: [UIView]
+//    if let topViewController = (viewController as? UINavigationController)?.topViewController {
+//      viewsToDisable = topViewController.view.subviews.filter(\.isUserInteractionEnabled)
+//    } else {
+//      viewsToDisable = viewController.view.subviews.filter(\.isUserInteractionEnabled)
+//    }
+//    
+//    disabledInteractionViews = viewsToDisable //viewController.view.subviews.filter(\.isUserInteractionEnabled)
+//    disabledInteractionViews.forEach {
+//      $0.isUserInteractionEnabled = false
+//    }
   }
 
   internal func enableOtherTouches() {
