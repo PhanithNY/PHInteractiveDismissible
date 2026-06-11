@@ -703,20 +703,18 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     let minimumScale = zoomOption?.minimumScale ?? 0.5
     let weightedTranslationX = weightedTranslation(translation, progress: progress)
     let weightedTranslationY = weightedVerticalTranslation(translationY)
-    // Pan drives scale from visible motion (post rubber-band) so the shrink stays 1:1 with
-    // gesture distance. Pinch has no horizontal translation, so we use its own pre-eased
-    // `progress` directly — otherwise the resultTransform interpolation would be zero and
-    // the card would only shrink via `additionalScale` (which floors at ~0.62).
-    let scaleProgress: CGFloat
+    // Horizontal pan should shrink with the finger's actual pull distance. The X translation
+    // itself is rubber-banded for a physical edge feel, but using that resisted value for
+    // scale made early right swipes feel under-responsive. Pinch keeps its own scale curve.
+    let weightedProgress: CGFloat
     if interactionDriver == .pinch {
-      scaleProgress = max(0.0, min(1.0, progress))
+      let scaleProgress = max(0.0, min(1.0, progress))
+      weightedProgress = weightedScaleProgress(scaleProgress)
     } else {
-      let maxVisibleTranslation = weightedTranslation(interactionDistance, progress: 1.0)
-      scaleProgress = naturalTravelProgress(primary: weightedTranslationX,
-                                            secondary: weightedTranslationY * 0.45,
-                                            maximum: maxVisibleTranslation)
+      let scaleProgress = horizontalPanScaleProgress(translationX: translation,
+                                                     weightedTranslationY: weightedTranslationY)
+      weightedProgress = weightedHorizontalPanScaleProgress(scaleProgress)
     }
-    let weightedProgress = weightedScaleProgress(scaleProgress)
     transitionContext.updateInteractiveTransition(weightedProgress)
     var transform = interactiveTransform(progress: weightedProgress,
                                          translationX: weightedTranslationX,
@@ -1345,6 +1343,19 @@ extension PHZoomInteractivePopInteractionController {
   private func weightedScaleProgress(_ progress: CGFloat) -> CGFloat {
     let clampedProgress = max(0.0, min(1.0, progress))
     return pow(clampedProgress, 1.52)
+  }
+
+  private func horizontalPanScaleProgress(translationX: CGFloat, weightedTranslationY: CGFloat) -> CGFloat {
+    let primary = max(0.0, min(1.0, translationX / max(interactionDistance, 1.0)))
+    let vertical = abs(weightedTranslationY) / max(interactionDistance, 1.0) * 0.35
+    return max(0.0, min(1.0, hypot(primary, vertical)))
+  }
+
+  /// Horizontal dismiss scale should respond earlier than the final transition percentage so
+  /// the view shrinks in proportion to the user's rightward pull.
+  private func weightedHorizontalPanScaleProgress(_ progress: CGFloat) -> CGFloat {
+    let clampedProgress = max(0.0, min(1.0, progress))
+    return pow(clampedProgress, 0.86)
   }
 
   private func weightedPinchProgress(_ progress: CGFloat) -> CGFloat {
