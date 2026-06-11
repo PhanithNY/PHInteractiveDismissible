@@ -73,8 +73,9 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   /// this, a user who twists before starting to pinch would see the card jump to the
   /// pre-pinch angle when pinch begins.
   private var rotationBaselineAtPinchBegin: CGFloat = 0
-  /// Y position (in container coords) where the pan gesture began. Used as the scale pivot so
-  /// the card visually anchors at the touch point instead of the geometric center.
+  /// Touch position (in container coords) where the horizontal pan began. Used as the scale
+  /// pivot so the card visually anchors at the touch point instead of the geometric center.
+  private var panAnchorX: CGFloat = 0
   private var panAnchorY: CGFloat = 0
   /// X position (in container coords) where the *vertical* dismissal pan began. The vertical
   /// path scales the card toward the touch X so a drag-down doesn't visually drift sideways
@@ -227,7 +228,9 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
 
     switch gestureRecognizer.state {
     case .began:
-      panAnchorY = gestureRecognizer.location(in: referenceView).y
+      let location = gestureRecognizer.location(in: referenceView)
+      panAnchorX = location.x
+      panAnchorY = location.y
       gestureBegan(driver: .pan)
 
     case .changed:
@@ -313,14 +316,13 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
       return
     }
 
-    // Same commit thresholds as horizontal — fast flick or past the midpoint without an
-    // upward fling. Velocity is Y in points/sec (positive = downward). The translation gets
-    // multiplied by `verticalAmplification` so the threshold tracks what the user *sees*
-    // rather than the raw finger distance: `verticalUpdate` already inflates visible motion
-    // by the same factor, so a finger drag that visually crosses the halfway point should
-    // commit even though the raw `translationY` is still ~9% below `interactionDistance/2`.
-    let amplifiedTranslationY = translationY * verticalAmplification
-    let shouldFinish = velocityY > 300 || (amplifiedTranslationY > 150*verticalAmplification && velocityY > -300)
+    // Finish from a fast downward flick or from projected visible progress. Using the amplified
+    // translation here keeps the decision aligned with what the card is doing on screen.
+    let verticalProgress = max(0.0, min(1.0, (translationY * verticalAmplification) / max(verticalInteractionDistance, 1.0)))
+    let shouldFinish = shouldFinishDismissal(progress: verticalProgress,
+                                             velocity: velocityY,
+                                             distance: verticalInteractionDistance,
+                                             progressThreshold: 0.28)
     let currentTranslationY = fromView?.transform.ty ?? 0.0
     let distanceToTravel = shouldFinish ? (resultTransform.ty - currentTranslationY) : -currentTranslationY
     let initialVelocity = springVelocity(distanceToTravel: distanceToTravel, gestureVelocity: velocityY)
@@ -345,8 +347,6 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
       return
     }
 
-    transitionContext.updateInteractiveTransition(progress)
-
     let minimumScale = zoomOption?.minimumScale ?? 0.5
     // Use a vertical-distance-sized rubber-band so the asymptote matches the screen height
     // the gesture travels through. The horizontal `weightedTranslation` is sized against
@@ -357,9 +357,11 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     let weightedTranslationY = weightedVerticalDismissalTranslation(translationY) * verticalAmplification
     let weightedTranslationX = weightedVerticalTranslation(translationX) * verticalAmplification
     let maxVisibleTranslation = weightedVerticalDismissalTranslation(verticalInteractionDistance)
-    let rawScaleProgress = weightedTranslationY / max(maxVisibleTranslation, 1)
-    let scaleProgress = max(0.0, min(1.0, rawScaleProgress * verticalAmplification))
+    let scaleProgress = naturalTravelProgress(primary: weightedTranslationY,
+                                              secondary: weightedTranslationX * 0.35,
+                                              maximum: maxVisibleTranslation)
     let weightedProgress = weightedScaleProgress(scaleProgress)
+    transitionContext.updateInteractiveTransition(weightedProgress)
 
     var transform = interactiveTransform(progress: weightedProgress,
                                          translationX: weightedTranslationX,
@@ -380,30 +382,26 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
                                                   for: fromView.bounds,
                                                   verticalOverflow: verticalOverflow)
 
-    // Anchor the scale pivot at the gesture's start X so the card scales toward the touch
-    // column instead of the geometric center — keeps the original-screen point at
-    // `verticalPanAnchorX` pinned under the finger as the card shrinks.
-    let currentScale = hypot(transform.a, transform.c)
-    let pivotOffsetX = verticalPanAnchorX - fromView.bounds.midX
-    transform.tx += pivotOffsetX * (1.0 - currentScale)
+    transform = transform.anchoredScale(at: CGPoint(x: verticalPanAnchorX, y: verticalPanAnchorY),
+                                        in: fromView.bounds)
 
     fromView.transform = transform
 
     if let shadowView {
-      let cornerRadius = max(initialCornerRadius, interpolateValue(from: initialCornerRadius, to: finalCornerRadius, progress: progress))
+      let cornerRadius = max(initialCornerRadius, interpolateValue(from: initialCornerRadius, to: finalCornerRadius, progress: weightedProgress))
       shadowView.transform = transform
-      shadowView.layer.shadowOpacity = Float(progress * 0.85)
+      shadowView.layer.shadowOpacity = Float(weightedProgress * 0.85)
       shadowView.layer.shadowPath = UIBezierPath(
         roundedRect: fromView.bounds,
         cornerRadius: cornerRadius
       ).cgPath
     }
 
-    let cornerRadius = max(initialCornerRadius, interpolateValue(from: initialCornerRadius, to: finalCornerRadius, progress: progress))
+    let cornerRadius = max(initialCornerRadius, interpolateValue(from: initialCornerRadius, to: finalCornerRadius, progress: weightedProgress))
     maskView.frame = initialMaskFrame
     maskView.layer.cornerRadius = cornerRadius
-    overlayView.layer.opacity = Float(1.0 - progress)
-    dimmingView?.alpha = dimmingView == nil ? (1.0 - progress) : 1.0
+    overlayView.layer.opacity = Float(1.0 - weightedProgress)
+    dimmingView?.alpha = dimmingView == nil ? (1.0 - weightedProgress) : 1.0
     blurView?.alpha = 0.0
     snapshotView.frame = initialSnapshotFrame
     snapshotView.layer.cornerRadius = cornerRadius
@@ -411,7 +409,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
 
     if let presentedViewController = transitionContext.viewController(forKey: .from),
        let modalPresentationController = presentedViewController.presentationController as? PHZoomPresentationController {
-      modalPresentationController.fadeView.alpha = 0.5 * (1.0 - progress)
+      modalPresentationController.fadeView.alpha = 0.5 * (1.0 - weightedProgress)
     }
   }
 
@@ -603,7 +601,11 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
       return
     }
 
-    let shouldFinish = velocity > 300 || (translation > interactionDistance / 2.0 && velocity > -300)
+    let progress = max(0.0, min(1.0, translation / max(interactionDistance, 1.0)))
+    let shouldFinish = shouldFinishDismissal(progress: progress,
+                                             velocity: velocity,
+                                             distance: interactionDistance,
+                                             progressThreshold: 0.5)
     let currentTranslationX = fromView?.transform.tx ?? 0.0
     let distanceToTravel = shouldFinish ? (resultTransform.tx - currentTranslationX) : -currentTranslationX
     let initialVelocity = springVelocity(distanceToTravel: distanceToTravel, gestureVelocity: velocity)
@@ -670,8 +672,9 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   }
   
   public func startInteractiveTransition(_ transitionContext: UIViewControllerContextTransitioning) {
-    // This should prevent dismiss / presentation issue after repeatedly tap.
-    // Fix it, if it doesn't work because I have know idea what happen now :<
+    // A very short gesture can end/cancel before UIKit calls this method. In that case the
+    // controller has already reset; cancel the late context immediately so UIKit doesn't keep
+    // an ownerless dismissal transition alive and block later presentations/dismissals.
     guard interactionInProgress else {
       transitionContext.cancelInteractiveTransition()
       transitionContext.completeTransition(false)
@@ -697,8 +700,6 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
       return
     }
 
-    transitionContext.updateInteractiveTransition(progress)
-
     let minimumScale = zoomOption?.minimumScale ?? 0.5
     let weightedTranslationX = weightedTranslation(translation, progress: progress)
     let weightedTranslationY = weightedVerticalTranslation(translationY)
@@ -711,23 +712,20 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
       scaleProgress = max(0.0, min(1.0, progress))
     } else {
       let maxVisibleTranslation = weightedTranslation(interactionDistance, progress: 1.0)
-      scaleProgress = max(0.0, min(1.0, weightedTranslationX / max(maxVisibleTranslation, 1)))
+      scaleProgress = naturalTravelProgress(primary: weightedTranslationX,
+                                            secondary: weightedTranslationY * 0.45,
+                                            maximum: maxVisibleTranslation)
     }
     let weightedProgress = weightedScaleProgress(scaleProgress)
+    transitionContext.updateInteractiveTransition(weightedProgress)
     var transform = interactiveTransform(progress: weightedProgress,
                                          translationX: weightedTranslationX,
                                          translationY: weightedTranslationY,
                                          minimumScale: minimumScale)
     transform = clampedTranslation(transform, in: transitionContext.containerView.bounds, for: fromView.bounds)
-    // Anchor the scale pivot at the gesture's start Y instead of the view's geometric center.
-    // UIView transforms scale around the layer's center, so a pure scale leaves the card
-    // visually shrinking around the screen middle. Adding `(pivotOffset)·(1-s)` to ty shifts
-    // the view so the original-screen point at `panAnchorY` stays under the touch — the card
-    // appears to scale outward from where the finger first landed, then slide right.
     if interactionDriver == .pan {
-      let currentScale = hypot(transform.a, transform.c)
-      let pivotOffsetY = panAnchorY - fromView.bounds.midY
-      transform.ty += pivotOffsetY * (1.0 - currentScale)
+      transform = transform.anchoredScale(at: CGPoint(x: panAnchorX, y: panAnchorY),
+                                          in: fromView.bounds)
     }
     transform = transform.scaledBy(x: additionalScale, y: additionalScale)
     transform = transform.rotated(by: rotationAngle)
@@ -747,30 +745,28 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     fromView.transform = transform
 
     if let shadowView {
-//      let scale = hypot(transform.a, transform.c)
-      let cornerRadius = max(initialCornerRadius, interpolateValue(from: initialCornerRadius, to: finalCornerRadius, progress: progress))
+      let cornerRadius = max(initialCornerRadius, interpolateValue(from: initialCornerRadius, to: finalCornerRadius, progress: weightedProgress))
       shadowView.transform = transform
-      shadowView.layer.shadowOpacity = Float(progress * 0.85)
+      shadowView.layer.shadowOpacity = Float(weightedProgress * 0.85)
       shadowView.layer.shadowPath = UIBezierPath(
-        roundedRect: fromView.bounds,//CGRect(origin: .zero, size: fromView.bounds.size),
-        cornerRadius: cornerRadius // scale
+        roundedRect: fromView.bounds,
+        cornerRadius: cornerRadius
       ).cgPath
     }
     
-    let cornerRadius = max(initialCornerRadius, interpolateValue(from: initialCornerRadius, to: finalCornerRadius, progress: progress))
+    let cornerRadius = max(initialCornerRadius, interpolateValue(from: initialCornerRadius, to: finalCornerRadius, progress: weightedProgress))
     maskView.frame = initialMaskFrame
     maskView.layer.cornerRadius = cornerRadius
-    overlayView.layer.opacity = Float(1.0 - progress)
-    dimmingView?.alpha = dimmingView == nil ? (1.0 - progress) : 1.0 //1.0 - progress
-    blurView?.alpha = 0.0//progress
+    overlayView.layer.opacity = Float(1.0 - weightedProgress)
+    dimmingView?.alpha = dimmingView == nil ? (1.0 - weightedProgress) : 1.0
+    blurView?.alpha = 0.0
     snapshotView.frame = initialSnapshotFrame
     snapshotView.layer.cornerRadius = cornerRadius
     snapshotView.alpha = 0.0
     
-    // Removable
     if let presentedViewController = transitionContext.viewController(forKey: .from),
        let modalPresentationController = presentedViewController.presentationController as? PHZoomPresentationController {
-      modalPresentationController.fadeView.alpha = 0.5 * (1.0 - progress)
+      modalPresentationController.fadeView.alpha = 0.5 * (1.0 - weightedProgress)
     }
   }
   
@@ -888,6 +884,14 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     let normalizedDistance = max(abs(distanceToTravel), 28.0)
     let normalizedVelocity = gestureVelocity / normalizedDistance
     return max(-8.0, min(8.0, normalizedVelocity))
+  }
+
+  private func shouldFinishDismissal(progress: CGFloat,
+                                     velocity: CGFloat,
+                                     distance: CGFloat,
+                                     progressThreshold: CGFloat) -> Bool {
+    let projectedProgress = progress + velocity / max(distance, 1.0) * 0.18
+    return velocity > 650 || (projectedProgress > progressThreshold && velocity > -300)
   }
   
   // Exposed at `internal` (rather than `private`) so the regression test for the idempotency
@@ -1185,11 +1189,9 @@ extension PHZoomInteractivePopInteractionController {
   /// The view's transform is applied from its center, so after the transform:
   ///   centerX in container = containerCenterX + tx
   ///   centerY in container = containerCenterY + ty
-  ///   scaledWidth  = viewBounds.width  * scale
   ///   scaledHeight = viewBounds.height * scale
   private func clampedTranslation(_ transform: CGAffineTransform, in containerBounds: CGRect, for viewBounds: CGRect) -> CGAffineTransform {
     let scale = hypot(transform.a, transform.c)
-    let scaledWidth  = viewBounds.width  * scale
     let scaledHeight = viewBounds.height * scale
 
     // The view's center in container space after transform
@@ -1350,6 +1352,11 @@ extension PHZoomInteractivePopInteractionController {
     return pow(clampedProgress, 2.08)
   }
 
+  private func naturalTravelProgress(primary: CGFloat, secondary: CGFloat, maximum: CGFloat) -> CGFloat {
+    let travel = hypot(max(primary, 0.0), secondary)
+    return max(0.0, min(1.0, travel / max(maximum, 1.0)))
+  }
+
   /// Rubber-band resistance for the pinch additional scale. Same shape as horizontal pan:
   /// initial slope `c` (responsive at small pinches) and asymptote at `1 - maxAmount` (no hard
   /// floor — pinching harder yields progressively less shrink, never snapping). With c=1.5 and
@@ -1369,5 +1376,19 @@ extension PHZoomInteractivePopInteractionController {
     blurView?.removeFromSuperview()
     snapshotView?.removeFromSuperview()
     shadowView?.removeFromSuperview()
+  }
+}
+
+private extension CGAffineTransform {
+  func anchoredScale(at point: CGPoint, in bounds: CGRect) -> CGAffineTransform {
+    let scale = hypot(a, c)
+    let pivotOffsetX = point.x - bounds.midX
+    let pivotOffsetY = point.y - bounds.midY
+    return CGAffineTransform(a: a,
+                             b: b,
+                             c: c,
+                             d: d,
+                             tx: tx + pivotOffsetX * (1.0 - scale),
+                             ty: ty + pivotOffsetY * (1.0 - scale))
   }
 }
