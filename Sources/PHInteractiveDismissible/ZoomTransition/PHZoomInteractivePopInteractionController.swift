@@ -55,6 +55,10 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   private var disabledInteractionViews: [UIView] = []
   private var shadowFinalFrame: CGRect = .zero
   private var interactionDriver: InteractionDriver?
+  private var pendingTransitionStartRecoveryID = 0
+  private let transitionStartRecoveryDelay: TimeInterval = 0.05
+  private let panDirectionMinimumTranslation: CGFloat = 2.0
+  private let horizontalPanDirectionTolerance: CGFloat = 0.85
   private var initialPinchLocation: CGPoint?
   /// Reference to the rotation gesture recognizer so the pinch handler can read its cumulative
   /// `.rotation` value when computing the card's rotation. Two-finger twist is the natural way
@@ -558,13 +562,19 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     }
 
     // Safety net, scheduled on *every* `.began` (not just the first):
-    // - If `dismiss(animated:)` didn't start a custom transition by the next run-loop tick,
+    // - If `dismiss(animated:)` doesn't start a custom transition shortly after recognition,
     //   `transitionContext` stays nil — recover so `disableOtherTouches`'s snapshot doesn't strand.
     // - If a previous interaction wedged the controller (`interactionInProgress == true` with no
     //   live `transitionContext`), this re-arms the recovery the old single-shot version couldn't.
-    DispatchQueue.main.async { [weak self] in
+    // UIKit can deliver `startInteractiveTransition(_:)` a little later on some OS versions, so
+    // this intentionally waits a few frames instead of assuming the next run-loop tick is enough.
+    pendingTransitionStartRecoveryID += 1
+    let recoveryID = pendingTransitionStartRecoveryID
+    DispatchQueue.main.asyncAfter(deadline: .now() + transitionStartRecoveryDelay) { [weak self] in
       guard let self else { return }
-      if self.transitionContext == nil && self.interactionInProgress {
+      if self.pendingTransitionStartRecoveryID == recoveryID,
+         self.transitionContext == nil,
+         self.interactionInProgress {
         self.resetInteractionState()
       }
     }
@@ -996,10 +1006,7 @@ extension PHZoomInteractivePopInteractionController: UIGestureRecognizerDelegate
       if panGestureRecognizer === verticalDismissPanGesture {
         return shouldBeginVerticalPan(panGestureRecognizer)
       }
-      let velocity = panGestureRecognizer.velocity(in: panGestureRecognizer.view)
-      let isRightwardPan = velocity.x > 0
-      let isPrimarilyHorizontal = abs(velocity.x) > abs(velocity.y)
-      guard isRightwardPan, isPrimarilyHorizontal else {
+      guard shouldBeginRightwardPan(panGestureRecognizer) else {
         return false
       }
     }
@@ -1009,6 +1016,16 @@ extension PHZoomInteractivePopInteractionController: UIGestureRecognizerDelegate
     }
 
     return true
+  }
+
+  private func shouldBeginRightwardPan(_ gestureRecognizer: UIPanGestureRecognizer) -> Bool {
+    let translation = gestureRecognizer.translation(in: gestureRecognizer.view)
+    if max(abs(translation.x), abs(translation.y)) >= panDirectionMinimumTranslation {
+      return translation.x > 0 && abs(translation.x) >= abs(translation.y) * horizontalPanDirectionTolerance
+    }
+
+    let velocity = gestureRecognizer.velocity(in: gestureRecognizer.view)
+    return velocity.x > 0 && abs(velocity.x) >= abs(velocity.y) * horizontalPanDirectionTolerance
   }
 
   /// Allow the rotation gesture and pinch gesture to recognize together — they need to be

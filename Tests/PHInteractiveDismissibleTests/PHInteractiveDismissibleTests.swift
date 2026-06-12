@@ -253,6 +253,17 @@ final class PHInteractiveDismissibleTests: XCTestCase {
                    "gestureRecognizerShouldBegin must clear the stale flag")
   }
 
+  func testZoomRightPanCanBeginFromTranslationWhenEarlyVelocityIsNoisy() {
+    let viewController = ZoomTestViewController()
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
+    let panGestureRecognizer = StubPanGestureRecognizer()
+    panGestureRecognizer.stubTranslation = CGPoint(x: 12, y: 5)
+    panGestureRecognizer.stubVelocity = CGPoint(x: 20, y: 80)
+
+    XCTAssertTrue(interactionController.gestureRecognizerShouldBegin(panGestureRecognizer),
+                  "A rightward drag should not be rejected just because the first velocity sample is noisy")
+  }
+
   func testZoomInteractionCancelsLateTransitionContextAfterFastGestureReset() {
     let containerView = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 640))
     let presentedViewController = ZoomTestViewController()
@@ -276,6 +287,44 @@ final class PHInteractiveDismissibleTests: XCTestCase {
                   "A late context for an already-ended gesture must be cancelled immediately")
     XCTAssertEqual(transitionContext.completedTransition, false)
     XCTAssertFalse(interactionController.interactionInProgress)
+  }
+
+  func testZoomInteractionAllowsTransitionContextAfterNextRunLoop() {
+    let containerView = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 640))
+    let presentedViewController = ZoomTestViewController()
+    let presentingViewController = UIViewController()
+    let sourceView = UIView(frame: CGRect(x: 24, y: 32, width: 80, height: 80))
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: presentedViewController)
+    let transitionContext = TestTransitionContext(containerView: containerView,
+                                                  fromViewController: presentedViewController,
+                                                  toViewController: presentingViewController,
+                                                  finalFrame: containerView.bounds)
+    let panGestureRecognizer = StubPanGestureRecognizer()
+    let handleSelector = NSSelectorFromString("handleGesture:")
+
+    presentedViewController.configuredSourceView = sourceView
+    presentedViewController.loadViewIfNeeded()
+    presentingViewController.loadViewIfNeeded()
+    presentedViewController.view.frame = containerView.bounds
+    presentingViewController.view.frame = containerView.bounds
+    presentingViewController.view.addSubview(sourceView)
+    containerView.addSubview(presentingViewController.view)
+    containerView.addSubview(presentedViewController.view)
+    presentedViewController.view.addGestureRecognizer(panGestureRecognizer)
+
+    panGestureRecognizer.setStubState(.began)
+    panGestureRecognizer.stubVelocity = CGPoint(x: 100, y: 0)
+    interactionController.perform(handleSelector, with: panGestureRecognizer)
+    pumpRunLoop(for: 0.01)
+
+    XCTAssertTrue(interactionController.interactionInProgress)
+
+    interactionController.startInteractiveTransition(transitionContext)
+
+    XCTAssertFalse(transitionContext.cancelInteractiveTransitionCalled,
+                   "The stale-gesture recovery must not beat a slightly delayed UIKit transition context")
+    XCTAssertNil(transitionContext.completedTransition)
+    XCTAssertTrue(interactionController.interactionInProgress)
   }
 
   func testZoomInteractionDoesNotLeakDisabledStateOnReentry() {
@@ -355,6 +404,52 @@ final class PHInteractiveDismissibleTests: XCTestCase {
                   "A late context for an already-ended gesture must be cancelled immediately")
     XCTAssertEqual(transitionContext.completedTransition, false)
     XCTAssertFalse(interactionController.interactionInProgress)
+  }
+
+  func testInteractivePopRightPanCanBeginFromTranslationWhenEarlyVelocityIsNoisy() {
+    let viewController = TestDismissibleViewController()
+    let interactionController = InteractivePopInteractionController(viewController: viewController)
+    let panGestureRecognizer = StubPanGestureRecognizer()
+    panGestureRecognizer.stubTranslation = CGPoint(x: 12, y: 5)
+    panGestureRecognizer.stubVelocity = CGPoint(x: 20, y: 80)
+
+    XCTAssertTrue(interactionController.gestureRecognizerShouldBegin(panGestureRecognizer),
+                  "A rightward drag should not be rejected just because the first velocity sample is noisy")
+  }
+
+  func testInteractivePopAllowsTransitionContextAfterNextRunLoop() {
+    let containerView = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 640))
+    let presentedViewController = TestDismissibleViewController()
+    let presentingViewController = UIViewController()
+    let interactionController = InteractivePopInteractionController(viewController: presentedViewController)
+    let transitionContext = TestTransitionContext(containerView: containerView,
+                                                  fromViewController: presentedViewController,
+                                                  toViewController: presentingViewController,
+                                                  finalFrame: containerView.bounds)
+    let panGestureRecognizer = StubPanGestureRecognizer()
+    let handleSelector = NSSelectorFromString("handleGesture:")
+
+    presentedViewController.loadViewIfNeeded()
+    presentingViewController.loadViewIfNeeded()
+    presentedViewController.view.frame = containerView.bounds
+    presentingViewController.view.frame = containerView.bounds
+    containerView.addSubview(presentingViewController.view)
+    containerView.addSubview(presentedViewController.view)
+    presentedViewController.view.addGestureRecognizer(panGestureRecognizer)
+
+    panGestureRecognizer.setStubState(.began)
+    panGestureRecognizer.stubVelocity = CGPoint(x: 100, y: 0)
+    interactionController.perform(handleSelector, with: panGestureRecognizer)
+    pumpRunLoop(for: 0.01)
+
+    XCTAssertTrue(interactionController.interactionInProgress)
+
+    interactionController.startInteractiveTransition(transitionContext)
+
+    XCTAssertFalse(transitionContext.cancelInteractiveTransitionCalled,
+                   "The stale-gesture recovery must not beat a slightly delayed UIKit transition context")
+    XCTAssertNil(transitionContext.completedTransition)
+    XCTAssertTrue(interactionController.interactionInProgress)
   }
 
   func testInteractivePopPanGestureCancelsControlTouchesWhenItBegins() {
