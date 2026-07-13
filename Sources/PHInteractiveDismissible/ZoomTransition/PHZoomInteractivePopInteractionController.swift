@@ -88,6 +88,10 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   /// Y position (in container coords) where the *vertical* dismissal pan began. Kept separate
   /// from `panAnchorY` (owned by the horizontal path) so the two flows never share state.
   private var verticalPanAnchorY: CGFloat = 0
+  /// A subtle forward-only boost keeps the grabbed point visually attached to the finger.
+  /// Resistance begins after the initial pickup zone instead of slowing the very first frame.
+  private let horizontalPanAmplification: CGFloat = 1.04
+  private let horizontalLinearTrackingFraction: CGFloat = 0.25
   /// Container height captured when the vertical pan begins. Used as the denominator for
   /// progress and for the rubber-band shape, so vertical motion is sized against the screen
   /// it can travel through (height) instead of the horizontal-pan distance (width).
@@ -711,7 +715,9 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     }
 
     let minimumScale = zoomOption?.minimumScale ?? 0.5
-    let weightedTranslationX = weightedTranslation(translation, progress: progress)
+    let weightedTranslationX = interactionDriver == .pan
+      ? horizontalDismissalTranslation(translation, distance: interactionDistance)
+      : weightedTranslation(translation, progress: progress)
     let weightedTranslationY = weightedVerticalTranslation(translationY)
     // Horizontal pan should shrink with the finger's actual pull distance. The X translation
     // itself is rubber-banded for a physical edge feel, but using that resisted value for
@@ -721,8 +727,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
       let scaleProgress = max(0.0, min(1.0, progress))
       weightedProgress = weightedScaleProgress(scaleProgress)
     } else {
-      let scaleProgress = horizontalPanScaleProgress(translationX: translation,
-                                                     weightedTranslationY: weightedTranslationY)
+      let scaleProgress = horizontalPanScaleProgress(translationX: translation)
       weightedProgress = weightedHorizontalPanScaleProgress(scaleProgress)
     }
     transitionContext.updateInteractiveTransition(weightedProgress)
@@ -730,10 +735,19 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
                                          translationX: weightedTranslationX,
                                          translationY: weightedTranslationY,
                                          minimumScale: minimumScale)
-    transform = clampedTranslation(transform, in: transitionContext.containerView.bounds, for: fromView.bounds)
     if interactionDriver == .pan {
+      // Keep Y as one continuous expression: rubber-banded finger travel plus the scale-pivot
+      // offset below. The general clamp's top and bottom constraints are mutually impossible
+      // while a near-fullscreen view is taller than the inset region, which made small Y input
+      // flip direction as the scale crossed its constraint branches.
+      transform = horizontalPanConstrainedTransform(transform,
+                                                    in: transitionContext.containerView.bounds)
       transform = transform.anchoredScale(at: CGPoint(x: panAnchorX, y: panAnchorY),
                                           in: fromView.bounds)
+    } else {
+      transform = clampedTranslation(transform,
+                                     in: transitionContext.containerView.bounds,
+                                     for: fromView.bounds)
     }
     transform = transform.scaledBy(x: additionalScale, y: additionalScale)
     transform = transform.rotated(by: rotationAngle)
@@ -1240,6 +1254,29 @@ extension PHZoomInteractivePopInteractionController {
     return CGAffineTransform(a: transform.a, b: transform.b, c: transform.c, d: transform.d, tx: tx, ty: ty)
   }
 
+  /// Keeps the existing horizontal center constraint without modifying vertical gesture travel.
+  /// Horizontal-pan Y is already bounded by `weightedVerticalTranslation`; applying the general
+  /// top/bottom clamp here can produce contradictory corrections while the card is nearly full
+  /// height. Exposed internally so the no-Y-inversion behavior can be regression tested.
+  internal func horizontalPanConstrainedTransform(_ transform: CGAffineTransform,
+                                                  in containerBounds: CGRect) -> CGAffineTransform {
+    let centerX = containerBounds.midX + transform.tx
+    var tx = transform.tx
+
+    if centerX < containerBounds.minX {
+      tx += containerBounds.minX - centerX
+    } else if centerX > containerBounds.maxX {
+      tx -= centerX - containerBounds.maxX
+    }
+
+    return CGAffineTransform(a: transform.a,
+                             b: transform.b,
+                             c: transform.c,
+                             d: transform.d,
+                             tx: tx,
+                             ty: transform.ty)
+  }
+
   /// Sibling of `clampedTranslation` for the vertical dismissal pan. X clamping is identical
   /// (keeps the card from drifting fully off-screen sideways once the pivot adjustment kicks
   /// in). Y clamping uses a NEGATIVE inset of `verticalOverflow` points — i.e., the view is
@@ -1332,6 +1369,30 @@ extension PHZoomInteractivePopInteractionController {
     let d = interactionDistance
     return d * (1.0 - 1.0 / (c * translation / d + 1.0))
   }
+
+  /// Tracks a rightward dismissal slightly ahead of the finger during the pickup phase, then
+  /// transitions continuously into rubber-band resistance. Applying resistance only after the
+  /// first quarter-width avoids the laggy initial slope of the classic rubber-band equation.
+  /// This is intentionally used only by `.pan`; pinch and vertical dismissal retain their curves.
+  internal func horizontalDismissalTranslation(_ translation: CGFloat,
+                                                distance: CGFloat) -> CGFloat {
+    let forwardTranslation = max(translation, 0)
+    let amplifiedTranslation = forwardTranslation * horizontalPanAmplification
+    guard distance > 0 else {
+      return amplifiedTranslation
+    }
+
+    let linearDistance = distance * horizontalLinearTrackingFraction
+    guard amplifiedTranslation > linearDistance else {
+      return amplifiedTranslation
+    }
+
+    let overflow = amplifiedTranslation - linearDistance
+    let resistanceDistance = max(distance - linearDistance, 1)
+    let resistedOverflow = resistanceDistance
+      * (1.0 - 1.0 / (overflow / resistanceDistance + 1.0))
+    return linearDistance + resistedOverflow
+  }
   
   /// Symmetric rubber-band for vertical drift on top of the pan anchor. Initial slope ~0.48
   /// (matches the previous linear damping for small drags), then asymptotes to
@@ -1362,10 +1423,8 @@ extension PHZoomInteractivePopInteractionController {
     return pow(clampedProgress, 1.52)
   }
 
-  private func horizontalPanScaleProgress(translationX: CGFloat, weightedTranslationY: CGFloat) -> CGFloat {
-    let primary = max(0.0, min(1.0, translationX / max(interactionDistance, 1.0)))
-    let vertical = abs(weightedTranslationY) / max(interactionDistance, 1.0) * 0.35
-    return max(0.0, min(1.0, hypot(primary, vertical)))
+  private func horizontalPanScaleProgress(translationX: CGFloat) -> CGFloat {
+    max(0.0, min(1.0, translationX / max(interactionDistance, 1.0)))
   }
 
   /// Horizontal dismiss scale should respond earlier than the final transition percentage so

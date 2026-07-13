@@ -264,6 +264,48 @@ final class PHInteractiveDismissibleTests: XCTestCase {
                   "A rightward drag should not be rejected just because the first velocity sample is noisy")
   }
 
+  func testZoomRightPanTracksFingerBeforeAddingResistance() {
+    let viewController = ZoomTestViewController()
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
+    let interactionDistance: CGFloat = 400
+
+    let shortPull = interactionController.horizontalDismissalTranslation(60,
+                                                                         distance: interactionDistance)
+    XCTAssertEqual(shortPull, 62.4, accuracy: 0.001,
+                   "The pickup phase should apply the subtle forward-only amplification")
+
+    let longPull = interactionController.horizontalDismissalTranslation(200,
+                                                                        distance: interactionDistance)
+    XCTAssertGreaterThan(longPull, 200 * 0.85,
+                         "Long rightward pulls should stay visually close to the finger")
+    XCTAssertLessThan(longPull, 200 * 1.04,
+                      "Long rightward pulls should blend into resistance after the pickup phase")
+
+    XCTAssertEqual(interactionController.horizontalDismissalTranslation(-40,
+                                                                        distance: interactionDistance),
+                   0,
+                   "The amplification must not apply to leftward travel")
+  }
+
+  func testZoomHorizontalPanConstraintPreservesVerticalTravel() {
+    let viewController = ZoomTestViewController()
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
+    let containerBounds = CGRect(x: 0, y: 0, width: 400, height: 800)
+
+    for translationY in stride(from: CGFloat(-80), through: 80, by: 8) {
+      let input = CGAffineTransform(a: 0.96,
+                                    b: 0,
+                                    c: 0,
+                                    d: 0.96,
+                                    tx: 120,
+                                    ty: translationY)
+      let result = interactionController.horizontalPanConstrainedTransform(input,
+                                                                           in: containerBounds)
+      XCTAssertEqual(result.ty, translationY, accuracy: 0.001,
+                     "Horizontal bounds handling must never invert or clamp vertical travel")
+    }
+  }
+
   func testZoomInteractionCancelsLateTransitionContextAfterFastGestureReset() {
     let containerView = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 640))
     let presentedViewController = ZoomTestViewController()
