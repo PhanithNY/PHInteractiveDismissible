@@ -13,13 +13,13 @@ enum ExampleTheme {
   static let accent = UIColor { traits in
     traits.userInterfaceStyle == .dark
       ? UIColor(red: 0.58, green: 0.82, blue: 0.36, alpha: 1)
-      : UIColor(red: 0.45, green: 0.72, blue: 0.26, alpha: 1)
+      : UIColor(red: 0.39, green: 0.74, blue: 0.24, alpha: 1)
   }
 
   static let pageBackground = UIColor { traits in
     traits.userInterfaceStyle == .dark
       ? UIColor(red: 0.06, green: 0.07, blue: 0.09, alpha: 1)
-      : UIColor(red: 0.94, green: 0.96, blue: 0.98, alpha: 1)
+      : UIColor(red: 0.96, green: 0.97, blue: 0.98, alpha: 1)
   }
 
   static let cardBackground = UIColor { traits in
