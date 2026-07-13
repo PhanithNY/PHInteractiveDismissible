@@ -51,6 +51,12 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   private weak var snapshotView: UIView?
   private weak var shadowView: UIView?
   private weak var sourceView: UIView?
+  /// The presented navigation bar lives inside `fromView`, so it inherits the card's pinch
+  /// transform. Fade it during pinch instead of counter-transforming UIKit's private bar-item
+  /// hierarchy, then restore its original appearance if the interaction is cancelled.
+  private weak var navigationBar: UINavigationBar?
+  private var initialNavigationBarAlpha: CGFloat = 1.0
+  private let navigationBarPinchFadeScaleDistance: CGFloat = 0.12
   private var sourceViewWasHidden: Bool = false
   private var disabledInteractionViews: [UIView] = []
   private var shadowFinalFrame: CGRect = .zero
@@ -132,6 +138,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     // Last line of defence: if the controller is torn down mid-interaction (e.g. the presented
     // VC is a cache/singleton whose views outlive this instance), restore any subviews we
     // disabled — otherwise they stay `isUserInteractionEnabled = false` with nothing left to fix them.
+    restoreNavigationBarAppearance()
     enableOtherTouches()
   }
 
@@ -765,6 +772,11 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
       transform.ty = translationY + pivotOffsetY - rotatedScaledPivotY
     }
     fromView.transform = transform
+    if interactionDriver == .pinch {
+      let visualScale = hypot(transform.a, transform.c)
+      navigationBar?.alpha = navigationBarAlpha(forVisualScale: visualScale,
+                                                initialAlpha: initialNavigationBarAlpha)
+    }
 
     if let shadowView {
       let cornerRadius = max(initialCornerRadius, interpolateValue(from: initialCornerRadius, to: finalCornerRadius, progress: weightedProgress))
@@ -831,6 +843,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
           roundedRect: CGRect(origin: .zero, size: fromView.bounds.size),
           cornerRadius: self.initialCornerRadius
         ).cgPath
+        self.restoreNavigationBarAppearance()
         if let modalPresentationController = transitionContext.viewController(forKey: .from)?.presentationController as? PHZoomPresentationController {
           modalPresentationController.fadeView.alpha = 0.5
         }
@@ -882,6 +895,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
           roundedRect: self.shadowFinalFrame,
           cornerRadius: self.finalCornerRadius / self.resultScaleFactor
         ).cgPath
+        self.navigationBar?.alpha = 0.0
         
         snapshotView.alpha = 1.0
         if let modalPresentationController = transitionContext.viewController(forKey: .from)?.presentationController as? PHZoomPresentationController {
@@ -948,6 +962,9 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   }
 
   private func resetInteractionState() {
+    restoreNavigationBarAppearance()
+    navigationBar = nil
+    initialNavigationBarAlpha = 1.0
     transitionContext = nil
     interactionInProgress = false
     interruptedTranslation = 0
@@ -1070,6 +1087,9 @@ extension PHZoomInteractivePopInteractionController {
     
     let presentedViewController = transitionContext.viewController(forKey: .from)
     let presentingViewController = transitionContext.viewController(forKey: .to)
+    if interactionDriver == .pinch {
+      captureNavigationBarAppearance(from: presentedViewController)
+    }
     guard let zoomOption = zoomOptionForPresentedViewController(presentedViewController)
       ?? zoomOptionForPresentedViewController(presentingViewController) else {
       transitionContext.completeTransition(false)
@@ -1197,6 +1217,32 @@ extension PHZoomInteractivePopInteractionController {
   
   private func zoomOptionForPresentedViewController(_ viewController: UIViewController?) -> ZoomOptions? {
     viewController?.resolvedZoomTransitioning()?.zoomOption
+  }
+
+  private func captureNavigationBarAppearance(from viewController: UIViewController?) {
+    guard let navigationController = navigationController(in: viewController),
+          !navigationController.isNavigationBarHidden else {
+      navigationBar = nil
+      initialNavigationBarAlpha = 1.0
+      return
+    }
+
+    navigationBar = navigationController.navigationBar
+    initialNavigationBarAlpha = navigationController.navigationBar.alpha
+  }
+
+  private func navigationController(in viewController: UIViewController?) -> UINavigationController? {
+    if let navigationController = viewController as? UINavigationController {
+      return navigationController
+    }
+    if let tabBarController = viewController as? UITabBarController {
+      return navigationController(in: tabBarController.selectedViewController)
+    }
+    return viewController?.navigationController
+  }
+
+  private func restoreNavigationBarAppearance() {
+    navigationBar?.alpha = initialNavigationBarAlpha
   }
   
   private func interpolateValue(from: CGFloat, to: CGFloat, progress: CGFloat) -> CGFloat {
@@ -1392,6 +1438,17 @@ extension PHZoomInteractivePopInteractionController {
     let resistedOverflow = resistanceDistance
       * (1.0 - 1.0 / (overflow / resistanceDistance + 1.0))
     return linearDistance + resistedOverflow
+  }
+
+  /// Fades navigation chrome during the first part of a pinch so bar items do not visibly
+  /// inherit the navigation controller's scale. Smoothstep keeps both ends continuous when the
+  /// user reverses direction. Internal for regression coverage; this is not public API.
+  internal func navigationBarAlpha(forVisualScale scale: CGFloat,
+                                   initialAlpha: CGFloat) -> CGFloat {
+    let scaleReduction = max(0.0, 1.0 - scale)
+    let progress = max(0.0, min(1.0, scaleReduction / navigationBarPinchFadeScaleDistance))
+    let smoothProgress = progress * progress * (3.0 - 2.0 * progress)
+    return initialAlpha * (1.0 - smoothProgress)
   }
   
   /// Symmetric rubber-band for vertical drift on top of the pan anchor. Initial slope ~0.48

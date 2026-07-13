@@ -306,6 +306,29 @@ final class PHInteractiveDismissibleTests: XCTestCase {
     }
   }
 
+  func testZoomPinchFadesNavigationBarBeforeItVisiblyScales() {
+    let viewController = ZoomTestViewController()
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
+    let initialAlpha: CGFloat = 0.8
+
+    XCTAssertEqual(interactionController.navigationBarAlpha(forVisualScale: 1.0,
+                                                            initialAlpha: initialAlpha),
+                   initialAlpha,
+                   accuracy: 0.001)
+    XCTAssertEqual(interactionController.navigationBarAlpha(forVisualScale: 0.94,
+                                                            initialAlpha: initialAlpha),
+                   initialAlpha * 0.5,
+                   accuracy: 0.001)
+    XCTAssertEqual(interactionController.navigationBarAlpha(forVisualScale: 0.88,
+                                                            initialAlpha: initialAlpha),
+                   0.0,
+                   accuracy: 0.001)
+    XCTAssertEqual(interactionController.navigationBarAlpha(forVisualScale: 0.7,
+                                                            initialAlpha: initialAlpha),
+                   0.0,
+                   accuracy: 0.001)
+  }
+
   func testZoomInteractionCancelsLateTransitionContextAfterFastGestureReset() {
     let containerView = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 640))
     let presentedViewController = ZoomTestViewController()
