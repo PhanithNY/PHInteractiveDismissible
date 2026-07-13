@@ -8,6 +8,15 @@
 import UIKit
 import ObjectiveC
 
+private final class PHZoomInteractiveDisplayLinkProxy: NSObject {
+  weak var interactionController: PHZoomInteractivePopInteractionController?
+
+  @objc
+  func displayLinkDidFire(_ displayLink: CADisplayLink) {
+    interactionController?.renderInteractiveFrame(displayLink)
+  }
+}
+
 public final class PHZoomInteractivePopInteractionController: NSObject, InteractiveTransitioning {
   private enum AssociatedKeys {
     // Each scroll view remembers which dismiss gestures it has already been wired to fail.
@@ -18,10 +27,46 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     static var wiredVerticalDismissGesture: UInt8 = 0
   }
 
-  private enum InteractionDriver {
+  private enum InteractionDriver: Equatable {
     case pan
     case verticalPan
     case pinch
+  }
+
+  private struct InteractiveFrameState {
+    let driver: InteractionDriver
+    var progress: CGFloat
+    var translationX: CGFloat
+    var translationY: CGFloat
+    var rotationAngle: CGFloat
+    var additionalScale: CGFloat
+
+    static func neutral(for driver: InteractionDriver) -> InteractiveFrameState {
+      InteractiveFrameState(driver: driver,
+                            progress: 0,
+                            translationX: 0,
+                            translationY: 0,
+                            rotationAngle: 0,
+                            additionalScale: 1)
+    }
+
+    func interpolated(to target: InteractiveFrameState,
+                      factor: CGFloat) -> InteractiveFrameState {
+      guard driver == target.driver else {
+        return target
+      }
+
+      func interpolate(_ start: CGFloat, _ end: CGFloat) -> CGFloat {
+        start + (end - start) * factor
+      }
+
+      return InteractiveFrameState(driver: driver,
+                                   progress: interpolate(progress, target.progress),
+                                   translationX: interpolate(translationX, target.translationX),
+                                   translationY: interpolate(translationY, target.translationY),
+                                   rotationAngle: interpolate(rotationAngle, target.rotationAngle),
+                                   additionalScale: interpolate(additionalScale, target.additionalScale))
+    }
   }
 
   public var interactionInProgress = false
@@ -61,6 +106,13 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   private var disabledInteractionViews: [UIView] = []
   private var shadowFinalFrame: CGRect = .zero
   private var interactionDriver: InteractionDriver?
+  private var interactiveDisplayLink: CADisplayLink?
+  private var interactiveDisplayLinkProxy: PHZoomInteractiveDisplayLinkProxy?
+  private var targetInteractiveFrame: InteractiveFrameState?
+  private var renderedInteractiveFrame: InteractiveFrameState?
+  /// Fraction of the remaining distance covered by one 120 Hz render frame. The equivalent
+  /// response is calculated from elapsed time, so 60/80/120 Hz devices feel consistent.
+  private let interactiveTrackingResponseAt120Hz: CGFloat = 0.72
   private var pendingTransitionStartRecoveryID = 0
   private let transitionStartRecoveryDelay: TimeInterval = 0.05
   private let panDirectionMinimumTranslation: CGFloat = 2.0
@@ -74,10 +126,6 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   /// Amplification factor on top of the user's actual finger twist. 1.0 = card matches finger
   /// rotation 1:1, higher values exaggerate.
   private let pinchRotationMultiplier: CGFloat = 1.0
-  /// Smoothed rotation angle. Each `.changed` event eases toward the gesture's raw rotation
-  /// (× multiplier) by at most `maxFrameDelta` radians, so finger jitter doesn't translate
-  /// into visible micro-snaps on the card.
-  private var smoothedRotationAngle: CGFloat = 0
   /// Rotation gesture's `.rotation` value captured at pinch `.began`. Subtracted from the
   /// current value so the card only sees rotation that happened *during* the pinch — without
   /// this, a user who twists before starting to pinch would see the card jump to the
@@ -115,11 +163,6 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   /// Dedicated vertical-down dismissal pan attached to the main view. Distinct from the
   /// horizontal pan recognizer so the existing horizontal logic stays bit-identical.
   private weak var verticalDismissPanGesture: UIPanGestureRecognizer?
-  /// EMA-smoothed pinch midpoint. Raw `gestureRecognizer.location(in:)` jitters because the
-  /// centroid wobbles with sub-pixel finger movement; smoothing it strips the high-frequency
-  /// noise so the card's translation reads as fluid finger-following instead of jittery snap.
-  private var smoothedPinchLocation: CGPoint?
-  
   // MARK: - Init
   
   public init(viewController: InteractiveDismissible & ZoomTransitioning) {
@@ -138,6 +181,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     // Last line of defence: if the controller is torn down mid-interaction (e.g. the presented
     // VC is a cache/singleton whose views outlive this instance), restore any subviews we
     // disabled — otherwise they stay `isUserInteractionEnabled = false` with nothing left to fix them.
+    stopInteractiveFrameRendering()
     restoreNavigationBarAppearance()
     enableOtherTouches()
   }
@@ -314,7 +358,12 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     }
     let distance = max(verticalInteractionDistance, 1)
     let progress = max(0.0, min(1.0, translationY / distance))
-    verticalUpdate(progress: progress, translationY: translationY, translationX: translationX)
+    enqueueInteractiveFrame(InteractiveFrameState(driver: .verticalPan,
+                                                   progress: progress,
+                                                   translationX: translationX,
+                                                   translationY: translationY,
+                                                   rotationAngle: 0,
+                                                   additionalScale: 1))
   }
 
   private func verticalGestureCancelled(translationY: CGFloat, velocityY: CGFloat) {
@@ -357,8 +406,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     guard let transitionContext,
           let fromView,
           let maskView,
-          let overlayView,
-          let snapshotView else {
+          let overlayView else {
       return
     }
 
@@ -402,25 +450,14 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
 
     fromView.transform = transform
 
+    let cornerRadius = max(initialCornerRadius, interpolateValue(from: initialCornerRadius, to: finalCornerRadius, progress: weightedProgress))
     if let shadowView {
-      let cornerRadius = max(initialCornerRadius, interpolateValue(from: initialCornerRadius, to: finalCornerRadius, progress: weightedProgress))
       shadowView.transform = transform
       shadowView.layer.shadowOpacity = Float(weightedProgress * 0.85)
-      shadowView.layer.shadowPath = UIBezierPath(
-        roundedRect: fromView.bounds,
-        cornerRadius: cornerRadius
-      ).cgPath
     }
 
-    let cornerRadius = max(initialCornerRadius, interpolateValue(from: initialCornerRadius, to: finalCornerRadius, progress: weightedProgress))
-    maskView.frame = initialMaskFrame
     maskView.layer.cornerRadius = cornerRadius
     overlayView.layer.opacity = Float(1.0 - weightedProgress)
-    dimmingView?.alpha = dimmingView == nil ? (1.0 - weightedProgress) : 1.0
-    blurView?.alpha = 0.0
-    snapshotView.frame = initialSnapshotFrame
-    snapshotView.layer.cornerRadius = cornerRadius
-    snapshotView.alpha = 0.0
 
     if let presentedViewController = transitionContext.viewController(forKey: .from),
        let modalPresentationController = presentedViewController.presentationController as? PHZoomPresentationController {
@@ -482,8 +519,6 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
       guard gestureRecognizer.velocity < 0 else { return }
       guard gestureRecognizer.numberOfTouches >= 2 else { return }
       initialPinchLocation = location
-      smoothedPinchLocation = location
-      smoothedRotationAngle = 0
       rotationBaselineAtPinchBegin = rotationGestureRecognizer?.rotation ?? 0
       gestureBegan(driver: .pinch)
 
@@ -495,42 +530,20 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
       if gestureRecognizer.numberOfTouches < 2 {
         interactionDriver = nil
         initialPinchLocation = nil
-        smoothedPinchLocation = nil
         pinchEnded(progress: progress, velocity: gestureRecognizer.velocity)
         return
       }
 
-      // EMA-smooth the centroid: blend the new sample 40% over the previous smoothed value.
-      // Lower alpha = more smoothing (more lag); 0.4 is a sweet spot that removes the visible
-      // wobble without making the card feel sluggish behind the fingers.
-      let smoothingAlpha: CGFloat = 0.4
-      let prevSmoothed = smoothedPinchLocation
-      let smoothed: CGPoint
-      if let prev = prevSmoothed {
-        smoothed = CGPoint(x: prev.x * (1 - smoothingAlpha) + location.x * smoothingAlpha,
-                           y: prev.y * (1 - smoothingAlpha) + location.y * smoothingAlpha)
-      } else {
-        smoothed = location
-      }
-      smoothedPinchLocation = smoothed
-
       // Rotation comes directly from the dedicated UIRotationGestureRecognizer — it reads the
-      // actual two-finger twist in radians. Multiplied by `pinchRotationMultiplier` to amplify
-      // the visible tilt vs. the real finger rotation, then clamped to a sane max.
-      // Smooth rotation: ease toward the gesture's current rotation by at most ~3° per frame.
-      // Removes finger jitter and any transient jumps without adding visible lag for slow twists.
+      // actual two-finger twist in radians. The display-link render loop smooths rotation and
+      // centroid travel together using elapsed time instead of gesture callback count.
       // Subtract the pre-pinch baseline so we only see rotation that accumulated *during* this
       // pinch — otherwise a twist before pinching would show as a sudden card rotation at start.
       let rawRotation = (rotationGestureRecognizer?.rotation ?? 0) - rotationBaselineAtPinchBegin
-      let target = rawRotation * pinchRotationMultiplier
-      let maxFrameDelta: CGFloat = .pi / 60
-      let delta = target - smoothedRotationAngle
-      let clampedDelta = max(-maxFrameDelta, min(maxFrameDelta, delta))
-      smoothedRotationAngle += clampedDelta
-      let rotationAngle = smoothedRotationAngle
+      let rotationAngle = rawRotation * pinchRotationMultiplier
 
-      let driftX = smoothed.x - (initialPinchLocation?.x ?? smoothed.x)
-      let driftY = smoothed.y - (initialPinchLocation?.y ?? smoothed.y)
+      let driftX = location.x - (initialPinchLocation?.x ?? location.x)
+      let driftY = location.y - (initialPinchLocation?.y ?? location.y)
       pinchChanged(progress: weightedPinchProgress(progress),
                    translationX: driftX,
                    translationY: driftY,
@@ -540,13 +553,11 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     case .cancelled, .failed:
       guard interactionDriver == .pinch else { return }
       initialPinchLocation = nil
-      smoothedPinchLocation = nil
       pinchCancelled(scale: gestureRecognizer.scale, velocity: gestureRecognizer.velocity)
 
     case .ended:
       guard interactionDriver == .pinch else { return }
       initialPinchLocation = nil
-      smoothedPinchLocation = nil
       pinchEnded(progress: progress, velocity: gestureRecognizer.velocity)
 
     default:
@@ -566,6 +577,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
 
     interruptedTranslation = 0
     interactionDriver = driver
+    beginInteractiveFrameRendering(for: driver)
 
     if !interactionInProgress {
       interactionInProgress = true
@@ -601,11 +613,12 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     // The scale pivot still locks to `panAnchorY`, so the card scales from the touch point and
     // springs up/down on top of that — a free pull, not free drift, since the resistance grows
     // with travel.
-    update(progress: progress,
-           translation: translation,
-           translationY: translationY,
-           rotationAngle: 0.0,
-           additionalScale: 1.0)
+    enqueueInteractiveFrame(InteractiveFrameState(driver: .pan,
+                                                   progress: progress,
+                                                   translationX: translation,
+                                                   translationY: translationY,
+                                                   rotationAngle: 0,
+                                                   additionalScale: 1))
   }
   
   private func gestureCancelled(translation: CGFloat, velocity: CGFloat) {
@@ -639,14 +652,12 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   }
 
   private func pinchChanged(progress: CGFloat, translationX: CGFloat, translationY: CGFloat, rotationAngle: CGFloat, pinchScale: CGFloat) {
-    guard transitionContext != nil else {
-      return
-    }
-    update(progress: progress,
-           translation: translationX,
-           translationY: translationY,
-           rotationAngle: rotationAngle,
-           additionalScale: pinchScale)
+    enqueueInteractiveFrame(InteractiveFrameState(driver: .pinch,
+                                                   progress: progress,
+                                                   translationX: translationX,
+                                                   translationY: translationY,
+                                                   rotationAngle: rotationAngle,
+                                                   additionalScale: pinchScale))
   }
 
   private func pinchCancelled(scale: CGFloat, velocity: CGFloat) {
@@ -716,8 +727,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     guard let transitionContext,
           let fromView,
           let maskView,
-          let overlayView,
-          let snapshotView else {
+          let overlayView else {
       return
     }
 
@@ -778,25 +788,14 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
                                                 initialAlpha: initialNavigationBarAlpha)
     }
 
+    let cornerRadius = max(initialCornerRadius, interpolateValue(from: initialCornerRadius, to: finalCornerRadius, progress: weightedProgress))
     if let shadowView {
-      let cornerRadius = max(initialCornerRadius, interpolateValue(from: initialCornerRadius, to: finalCornerRadius, progress: weightedProgress))
       shadowView.transform = transform
       shadowView.layer.shadowOpacity = Float(weightedProgress * 0.85)
-      shadowView.layer.shadowPath = UIBezierPath(
-        roundedRect: fromView.bounds,
-        cornerRadius: cornerRadius
-      ).cgPath
     }
     
-    let cornerRadius = max(initialCornerRadius, interpolateValue(from: initialCornerRadius, to: finalCornerRadius, progress: weightedProgress))
-    maskView.frame = initialMaskFrame
     maskView.layer.cornerRadius = cornerRadius
     overlayView.layer.opacity = Float(1.0 - weightedProgress)
-    dimmingView?.alpha = dimmingView == nil ? (1.0 - weightedProgress) : 1.0
-    blurView?.alpha = 0.0
-    snapshotView.frame = initialSnapshotFrame
-    snapshotView.layer.cornerRadius = cornerRadius
-    snapshotView.alpha = 0.0
     
     if let presentedViewController = transitionContext.viewController(forKey: .from),
        let modalPresentationController = presentedViewController.presentationController as? PHZoomPresentationController {
@@ -805,6 +804,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   }
   
   private func cancel(initialSpringVelocity: CGFloat) {
+    stopInteractiveFrameRendering()
     guard let transitionContext,
           let fromView,
           let maskView,
@@ -857,6 +857,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   }
   
   private func finish(initialSpringVelocity: CGFloat) {
+    stopInteractiveFrameRendering()
     guard let transitionContext,
           let fromView,
           let maskView,
@@ -913,7 +914,85 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   }
   
   // MARK: - Helpers
-  
+
+  private func beginInteractiveFrameRendering(for driver: InteractionDriver) {
+    stopInteractiveFrameRendering()
+
+    let neutralFrame = InteractiveFrameState.neutral(for: driver)
+    targetInteractiveFrame = neutralFrame
+    renderedInteractiveFrame = neutralFrame
+
+    let proxy = PHZoomInteractiveDisplayLinkProxy()
+    proxy.interactionController = self
+    let displayLink = CADisplayLink(target: proxy,
+                                    selector: #selector(PHZoomInteractiveDisplayLinkProxy.displayLinkDidFire(_:)))
+
+    let maximumFramesPerSecond = max(UIScreen.main.maximumFramesPerSecond, 60)
+    if #available(iOS 15.0, *) {
+      let maximum = Float(maximumFramesPerSecond)
+      displayLink.preferredFrameRateRange = CAFrameRateRange(minimum: min(80, maximum),
+                                                            maximum: maximum,
+                                                            preferred: maximum)
+    } else {
+      displayLink.preferredFramesPerSecond = maximumFramesPerSecond
+    }
+
+    displayLink.add(to: .main, forMode: .common)
+    interactiveDisplayLinkProxy = proxy
+    interactiveDisplayLink = displayLink
+  }
+
+  private func enqueueInteractiveFrame(_ frame: InteractiveFrameState) {
+    guard interactionDriver == frame.driver else {
+      return
+    }
+    targetInteractiveFrame = frame
+  }
+
+  fileprivate func renderInteractiveFrame(_ displayLink: CADisplayLink) {
+    guard let targetInteractiveFrame else {
+      return
+    }
+
+    let reportedFrameDuration = displayLink.targetTimestamp - displayLink.timestamp
+    let frameDuration = reportedFrameDuration > 0 ? reportedFrameDuration : displayLink.duration
+    let factor = interactiveFrameInterpolationAlpha(forFrameDuration: frameDuration)
+    let renderedFrame = renderedInteractiveFrame?
+      .interpolated(to: targetInteractiveFrame, factor: factor)
+      ?? targetInteractiveFrame
+    renderedInteractiveFrame = renderedFrame
+
+    switch renderedFrame.driver {
+    case .pan, .pinch:
+      update(progress: renderedFrame.progress,
+             translation: renderedFrame.translationX,
+             translationY: renderedFrame.translationY,
+             rotationAngle: renderedFrame.rotationAngle,
+             additionalScale: renderedFrame.additionalScale)
+
+    case .verticalPan:
+      verticalUpdate(progress: renderedFrame.progress,
+                     translationY: renderedFrame.translationY,
+                     translationX: renderedFrame.translationX)
+    }
+  }
+
+  private func stopInteractiveFrameRendering() {
+    interactiveDisplayLink?.invalidate()
+    interactiveDisplayLink = nil
+    interactiveDisplayLinkProxy = nil
+    targetInteractiveFrame = nil
+    renderedInteractiveFrame = nil
+  }
+
+  /// Time-based response for display-synchronized gesture rendering. At 120 Hz this returns
+  /// `interactiveTrackingResponseAt120Hz`; lower refresh rates cover an equivalent amount of
+  /// motion per unit of time rather than feeling progressively heavier.
+  internal func interactiveFrameInterpolationAlpha(forFrameDuration duration: CFTimeInterval) -> CGFloat {
+    let normalizedFrameCount = max(CGFloat(duration) * 120.0, 0.0)
+    return 1.0 - pow(1.0 - interactiveTrackingResponseAt120Hz, normalizedFrameCount)
+  }
+
   /// Normalizes gesture velocity for UIKit spring APIs.
   /// Keep the value conservative so the spring settles with visible weight instead of snapping.
   private func springVelocity(distanceToTravel: CGFloat, gestureVelocity: CGFloat) -> CGFloat {
@@ -962,6 +1041,7 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   }
 
   private func resetInteractionState() {
+    stopInteractiveFrameRendering()
     restoreNavigationBarAppearance()
     navigationBar = nil
     initialNavigationBarAlpha = 1.0
@@ -972,8 +1052,6 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
     verticalInteractionDistance = 0
     interactionDriver = nil
     initialPinchLocation = nil
-    smoothedPinchLocation = nil
-    smoothedRotationAngle = 0
     rotationBaselineAtPinchBegin = 0
     enableOtherTouches()
   }
