@@ -495,6 +495,19 @@ final class PHInteractiveDismissibleTests: XCTestCase {
                   "A rightward drag should not be rejected just because the first velocity sample is noisy")
   }
 
+  func testInteractivePopFrameInterpolationIsRefreshRateIndependent() {
+    let viewController = TestDismissibleViewController()
+    let interactionController = InteractivePopInteractionController(viewController: viewController)
+
+    let alphaAt120Hz = interactionController.interactiveFrameInterpolationAlpha(forFrameDuration: 1.0 / 120.0)
+    let alphaAt60Hz = interactionController.interactiveFrameInterpolationAlpha(forFrameDuration: 1.0 / 60.0)
+
+    XCTAssertEqual(alphaAt120Hz, 0.72, accuracy: 0.001)
+    XCTAssertEqual(alphaAt60Hz, 1.0 - pow(1.0 - 0.72, 2.0), accuracy: 0.001)
+    XCTAssertGreaterThan(alphaAt60Hz, alphaAt120Hz,
+                         "A longer display interval should catch up further to preserve response time")
+  }
+
   func testInteractivePopAllowsTransitionContextAfterNextRunLoop() {
     let containerView = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 640))
     let presentedViewController = TestDismissibleViewController()

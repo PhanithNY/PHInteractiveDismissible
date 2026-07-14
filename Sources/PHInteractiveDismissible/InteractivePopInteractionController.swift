@@ -7,6 +7,15 @@
 
 import UIKit
 
+private final class InteractivePopDisplayLinkProxy: NSObject {
+  weak var interactionController: InteractivePopInteractionController?
+
+  @objc
+  func displayLinkDidFire(_ displayLink: CADisplayLink) {
+    interactionController?.renderInteractiveFrame(displayLink)
+  }
+}
+
 public final class InteractivePopInteractionController: NSObject, InteractiveTransitioning {
   
   public var interactionInProgress = false
@@ -22,6 +31,13 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   private var finishAnimator: UIViewPropertyAnimator?
   private var insertedPresentedViewController: Bool = false
   private var disabledInteractionViews: [UIView] = []
+  private var interactiveDisplayLink: CADisplayLink?
+  private var interactiveDisplayLinkProxy: InteractivePopDisplayLinkProxy?
+  private var targetInteractiveProgress: CGFloat?
+  private var renderedInteractiveProgress: CGFloat?
+  /// Fraction of the remaining distance covered by one 120 Hz render frame. The equivalent
+  /// response is calculated from elapsed time, so 60/80/120 Hz devices feel consistent.
+  private let interactiveTrackingResponseAt120Hz: CGFloat = 0.72
   private var pendingTransitionStartRecoveryID = 0
   private let transitionStartRecoveryDelay: TimeInterval = 0.05
   private let panDirectionMinimumTranslation: CGFloat = 2.0
@@ -54,6 +70,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
     // Last line of defence: if the controller is torn down mid-interaction (e.g. the presented
     // VC is a cache/singleton whose views outlive this instance), restore any subviews we
     // disabled — otherwise they stay `isUserInteractionEnabled = false` with nothing left to fix them.
+    stopInteractiveFrameRendering()
     enableOtherTouches()
   }
 
@@ -114,6 +131,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
     }
 
     disableOtherTouches()
+    beginInteractiveFrameRendering()
     
     if let presentedFrame = presentedFrame {
       interruptedTranslation = viewController.view.frame.minX - presentedFrame.minX
@@ -149,7 +167,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
     }
     var progress = interactionDistance == 0 ? 0 : (translation / interactionDistance)
     if progress < 0 { progress /= (1.0 + abs(progress * 20)) }
-    update(progress: progress)
+    targetInteractiveProgress = max(0, min(1, progress))
   }
   
   private func gestureCancelled(translation: CGFloat, velocity: CGFloat) {
@@ -221,6 +239,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   
   // Exposed at `internal` so transition-completion tests can bypass private gesture state.
   internal func cancel(initialSpringVelocity: CGFloat) {
+    stopInteractiveFrameRendering()
     guard let transitionContext = transitionContext, let presentedFrame = presentedFrame else {
       // No live transition to wind down — but `disableOtherTouches()` already ran in
       // `gestureBegan`. Bailing without restoring is the dead-tap leak; reset instead.
@@ -259,6 +278,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   
   // Exposed at `internal` so transition-completion tests can bypass private gesture state.
   internal func finish(initialSpringVelocity: CGFloat) {
+    stopInteractiveFrameRendering()
     guard let transitionContext = transitionContext, let presentedFrame = presentedFrame else {
       // See `cancel(initialSpringVelocity:)` — never leave `disabledInteractionViews` stranded.
       resetInteractionState()
@@ -295,6 +315,61 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   }
   
   // MARK: - Helpers
+
+  private func beginInteractiveFrameRendering() {
+    stopInteractiveFrameRendering()
+    targetInteractiveProgress = 0
+    renderedInteractiveProgress = 0
+
+    let proxy = InteractivePopDisplayLinkProxy()
+    proxy.interactionController = self
+    let displayLink = CADisplayLink(target: proxy,
+                                    selector: #selector(InteractivePopDisplayLinkProxy.displayLinkDidFire(_:)))
+
+    let maximumFramesPerSecond = max(UIScreen.main.maximumFramesPerSecond, 60)
+    if #available(iOS 15.0, *) {
+      let maximum = Float(maximumFramesPerSecond)
+      displayLink.preferredFrameRateRange = CAFrameRateRange(minimum: min(80, maximum),
+                                                            maximum: maximum,
+                                                            preferred: maximum)
+    } else {
+      displayLink.preferredFramesPerSecond = maximumFramesPerSecond
+    }
+
+    displayLink.add(to: .main, forMode: .common)
+    interactiveDisplayLinkProxy = proxy
+    interactiveDisplayLink = displayLink
+  }
+
+  fileprivate func renderInteractiveFrame(_ displayLink: CADisplayLink) {
+    guard let targetInteractiveProgress else {
+      return
+    }
+
+    let reportedFrameDuration = displayLink.targetTimestamp - displayLink.timestamp
+    let frameDuration = reportedFrameDuration > 0 ? reportedFrameDuration : displayLink.duration
+    let factor = interactiveFrameInterpolationAlpha(forFrameDuration: frameDuration)
+    let previousProgress = renderedInteractiveProgress ?? targetInteractiveProgress
+    let renderedProgress = previousProgress + (targetInteractiveProgress - previousProgress) * factor
+    renderedInteractiveProgress = renderedProgress
+    update(progress: max(0, min(1, renderedProgress)))
+  }
+
+  private func stopInteractiveFrameRendering() {
+    interactiveDisplayLink?.invalidate()
+    interactiveDisplayLink = nil
+    interactiveDisplayLinkProxy = nil
+    targetInteractiveProgress = nil
+    renderedInteractiveProgress = nil
+  }
+
+  /// Time-based response for display-synchronized gesture rendering. At 120 Hz this returns
+  /// `interactiveTrackingResponseAt120Hz`; lower refresh rates cover an equivalent amount of
+  /// motion per unit of time rather than feeling progressively heavier.
+  internal func interactiveFrameInterpolationAlpha(forFrameDuration duration: CFTimeInterval) -> CGFloat {
+    let normalizedFrameCount = max(CGFloat(duration) * 120.0, 0.0)
+    return 1.0 - pow(1.0 - interactiveTrackingResponseAt120Hz, normalizedFrameCount)
+  }
   
   private func springVelocity(distanceToTravel: CGFloat, gestureVelocity: CGFloat) -> CGFloat {
     distanceToTravel == 0 ? 0 : gestureVelocity / distanceToTravel
@@ -378,6 +453,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
   }
 
   private func resetInteractionState() {
+    stopInteractiveFrameRendering()
     transitionContext = nil
     insertedPresentedViewController = false
     interactionInProgress = false
