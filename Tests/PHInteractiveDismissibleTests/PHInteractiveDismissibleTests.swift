@@ -19,12 +19,15 @@ final class PHInteractiveDismissibleTests: XCTestCase {
   func testNavigationControllerForwardsInteractiveDismissibleProperties() {
     let rootViewController = TestDismissibleViewController()
     let scrollView = UIScrollView()
+    let exclusiveView = UIView()
     rootViewController.configuredScrollView = scrollView
+    rootViewController.configuredExclusiveViews = [exclusiveView]
     rootViewController.configuredCornerRadius = 24
 
     let navigationController = UINavigationController(rootViewController: rootViewController)
 
     XCTAssertTrue(navigationController.dismissibleScrollView === scrollView)
+    XCTAssertTrue(navigationController.exclusiveViews.first === exclusiveView)
     XCTAssertEqual(navigationController.preferredCornerRadius, 24)
   }
 
@@ -232,6 +235,28 @@ final class PHInteractiveDismissibleTests: XCTestCase {
                    "Navigation-bar item touches should remain owned by UIKit so their actions can fire")
     XCTAssertTrue(interactionController.shouldReceiveGestureTouch(from: rootViewController.view),
                   "Content touches should still be eligible for interactive dismissal")
+  }
+
+  func testZoomInteractionRejectsTouchesInsideExclusiveViews() {
+    let viewController = ZoomTestViewController()
+    let exclusiveView = UIView()
+    let exclusiveSubview = UIView()
+    let allowedView = UIView()
+    viewController.view.addSubview(exclusiveView)
+    exclusiveView.addSubview(exclusiveSubview)
+    viewController.view.addSubview(allowedView)
+
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
+
+    XCTAssertTrue(interactionController.shouldReceiveGestureTouch(from: exclusiveSubview))
+
+    viewController.configuredExclusiveViews = [exclusiveView]
+
+    XCTAssertFalse(interactionController.shouldReceiveGestureTouch(from: exclusiveView))
+    XCTAssertFalse(interactionController.shouldReceiveGestureTouch(from: exclusiveSubview))
+    XCTAssertTrue(interactionController.shouldReceiveGestureTouch(from: allowedView))
+    XCTAssertTrue(interactionController.shouldReceiveGestureTouch(from: viewController.view))
+    XCTAssertTrue(interactionController.shouldReceiveGestureTouch(from: nil))
   }
 
   func testZoomInteractionRecoversFromStaleInteractionInProgressFlag() {
@@ -495,6 +520,30 @@ final class PHInteractiveDismissibleTests: XCTestCase {
                   "A rightward drag should not be rejected just because the first velocity sample is noisy")
   }
 
+  func testInteractivePopRejectsTouchesInsideExclusiveViews() {
+    let viewController = TestDismissibleViewController()
+    let exclusiveView = UIView()
+    let exclusiveSubview = UIView()
+    let allowedView = UIView()
+    viewController.view.addSubview(exclusiveView)
+    exclusiveView.addSubview(exclusiveSubview)
+    viewController.view.addSubview(allowedView)
+
+    let interactionController = InteractivePopInteractionController(viewController: viewController)
+
+    XCTAssertTrue(interactionController.shouldReceiveGestureTouch(from: exclusiveSubview))
+
+    // The list is deliberately read when UIKit offers a touch, so changing content or replacing
+    // a navigation controller's top view controller does not require cache invalidation.
+    viewController.configuredExclusiveViews = [exclusiveView]
+
+    XCTAssertFalse(interactionController.shouldReceiveGestureTouch(from: exclusiveView))
+    XCTAssertFalse(interactionController.shouldReceiveGestureTouch(from: exclusiveSubview))
+    XCTAssertTrue(interactionController.shouldReceiveGestureTouch(from: allowedView))
+    XCTAssertTrue(interactionController.shouldReceiveGestureTouch(from: viewController.view))
+    XCTAssertTrue(interactionController.shouldReceiveGestureTouch(from: nil))
+  }
+
   func testInteractivePopFrameInterpolationIsRefreshRateIndependent() {
     let viewController = TestDismissibleViewController()
     let interactionController = InteractivePopInteractionController(viewController: viewController)
@@ -693,10 +742,15 @@ private final class CapturingPresenterViewController: UIViewController {
 
 private final class TestDismissibleViewController: UIViewController, InteractiveDismissible {
   var configuredScrollView: UIScrollView?
+  var configuredExclusiveViews: [UIView] = []
   var configuredCornerRadius: CGFloat?
 
   var dismissibleScrollView: UIScrollView? {
     configuredScrollView
+  }
+
+  var exclusiveViews: [UIView] {
+    configuredExclusiveViews
   }
 
   var preferredCornerRadius: CGFloat? {
@@ -706,10 +760,15 @@ private final class TestDismissibleViewController: UIViewController, Interactive
 
 private final class ZoomTestViewController: UIViewController, InteractiveDismissible, ZoomTransitioning {
   var configuredScrollView: UIScrollView?
+  var configuredExclusiveViews: [UIView] = []
   var configuredSourceView: UIView?
 
   var dismissibleScrollView: UIScrollView? {
     configuredScrollView
+  }
+
+  var exclusiveViews: [UIView] {
+    configuredExclusiveViews
   }
 
   func sourceView(for transition: PHZoomTransitioning.Transition) -> UIView? {

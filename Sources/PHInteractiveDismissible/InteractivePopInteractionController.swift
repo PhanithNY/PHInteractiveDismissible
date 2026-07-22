@@ -469,6 +469,14 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
 // MARK: - UIGestureRecognizerDelegate
 
 extension InteractivePopInteractionController: UIGestureRecognizerDelegate {
+  public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    shouldReceiveGestureTouch(from: touch.view)
+  }
+
+  internal func shouldReceiveGestureTouch(from touchedView: UIView?) -> Bool {
+    viewController.shouldReceiveInteractiveDismissTouch(from: touchedView)
+  }
+
   public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
     let shouldBeginGate = interactiveDismissShouldBegin ?? viewController.interactiveDismissShouldBegin
     if let shouldBegin = shouldBeginGate, !shouldBegin() {

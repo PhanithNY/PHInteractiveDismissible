@@ -257,6 +257,10 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
   }
 
   internal func shouldReceiveGestureTouch(from touchedView: UIView?) -> Bool {
+    guard viewController.shouldReceiveInteractiveDismissTouch(from: touchedView) else {
+      return false
+    }
+
     guard let touchedView else {
       return true
     }
