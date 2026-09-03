@@ -115,6 +115,14 @@ final class PHInteractiveDismissibleTests: XCTestCase {
     XCTAssertNil(destination._zoomTransitionSourceRect)
   }
 
+  func testZoomPresentationCompletionResetsPresentedViewCornerRadius() {
+    assertZoomPresentationResetsPresentedViewCornerRadius(completed: true)
+  }
+
+  func testZoomPresentationCancellationResetsPresentedViewCornerRadius() {
+    assertZoomPresentationResetsPresentedViewCornerRadius(completed: false)
+  }
+
   func testZoomInteractionBlocksPinchWhenNavigationStackHasMultipleViewControllers() {
     let rootViewController = ZoomTestViewController()
     let childViewController = ZoomTestViewController()
@@ -725,6 +733,25 @@ final class PHInteractiveDismissibleTests: XCTestCase {
     XCTAssertTrue(sourceView.isHidden,
                   "A cancelled dismissal with the same source should preserve the presentation-hidden source")
     XCTAssertTrue(viewController._zoomTransitionHiddenSourceView === sourceView)
+  }
+
+  private func assertZoomPresentationResetsPresentedViewCornerRadius(completed: Bool,
+                                                                      file: StaticString = #filePath,
+                                                                      line: UInt = #line) {
+    let presenter = AppearanceRecordingViewController()
+    let presented = ZoomTestViewController()
+    let presentationController = PHZoomPresentationController(presentedViewController: presented,
+                                                               presenting: presenter)
+
+    presented.loadViewIfNeeded()
+    presented.view.layer.cornerRadius = 24
+    presented.view.layer.masksToBounds = true
+
+    presentationController.presentationTransitionWillBegin()
+    presentationController.presentationTransitionDidEnd(completed)
+
+    XCTAssertEqual(presented.view.layer.cornerRadius, 0, file: file, line: line)
+    XCTAssertFalse(presented.view.layer.masksToBounds, file: file, line: line)
   }
 }
 
