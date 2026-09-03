@@ -47,6 +47,32 @@ final class PHInteractiveDismissibleTests: XCTestCase {
     XCTAssertTrue(completionCalled)
   }
 
+  func testInteractivePresentationCompletionResetsPresentedViewCornerRadius() {
+    assertInteractivePresentationResetsPresentedViewCornerRadius(completed: true)
+  }
+
+  func testInteractivePresentationCancellationResetsPresentedViewCornerRadius() {
+    assertInteractivePresentationResetsPresentedViewCornerRadius(completed: false)
+  }
+
+  func testInteractivePopRestoresPreferredCornerRadiusWhenDismissalBegins() {
+    let presented = TestDismissibleViewController()
+    presented.configuredCornerRadius = 24
+    let interactionController = InteractivePopInteractionController(viewController: presented)
+
+    // The presentation controller clears the temporary presentation radius before the
+    // controller begins accepting interactive dismissal gestures.
+    presented.view.layer.cornerRadius = 0
+    presented.view.layer.masksToBounds = false
+    XCTAssertEqual(presented.view.layer.cornerRadius, 0)
+    XCTAssertFalse(presented.view.layer.masksToBounds)
+
+    interactionController.applyPreferredCornerRadius()
+
+    XCTAssertEqual(presented.view.layer.cornerRadius, 24)
+    XCTAssertTrue(presented.view.layer.masksToBounds)
+  }
+
   func testModalPresentationControllerCompletesPresenterAppearanceOnDismissalFinish() {
     let presenter = AppearanceRecordingViewController()
     let presented = UIViewController()
@@ -629,23 +655,31 @@ final class PHInteractiveDismissibleTests: XCTestCase {
   }
 
   func testInteractiveDismissGestureCancelKeepsPresentedViewController() {
-    let harness = makeInteractiveDismissHarness()
+    let harness = makeInteractiveDismissHarness(preferredCornerRadius: 24)
+
+    XCTAssertEqual(harness.destinationViewController.view.layer.cornerRadius, 24)
 
     harness.interactionController.cancel(initialSpringVelocity: 0)
 
     XCTAssertTrue(harness.transitionContext.cancelInteractiveTransitionCalled)
     XCTAssertEqual(harness.transitionContext.completedTransition, false)
     XCTAssertEqual(harness.destinationViewController.view.frame, harness.transitionContext.finalFrame)
+    XCTAssertEqual(harness.destinationViewController.view.layer.cornerRadius, 0)
+    XCTAssertFalse(harness.destinationViewController.view.layer.masksToBounds)
   }
 
   func testInteractiveDismissGestureFinishDismissesPresentedViewController() {
-    let harness = makeInteractiveDismissHarness()
+    let harness = makeInteractiveDismissHarness(preferredCornerRadius: 24)
+
+    XCTAssertEqual(harness.destinationViewController.view.layer.cornerRadius, 24)
 
     harness.interactionController.finish(initialSpringVelocity: 0)
 
     XCTAssertTrue(harness.transitionContext.finishInteractiveTransitionCalled)
     XCTAssertEqual(harness.transitionContext.completedTransition, true)
     XCTAssertEqual(harness.destinationViewController.view.frame.minX, harness.transitionContext.containerView.bounds.width)
+    XCTAssertEqual(harness.destinationViewController.view.layer.cornerRadius, 0)
+    XCTAssertFalse(harness.destinationViewController.view.layer.masksToBounds)
   }
 
   func testInteractiveDismissCompletesCancelWhenCancelAnimatorIsInterrupted() {
@@ -753,6 +787,28 @@ final class PHInteractiveDismissibleTests: XCTestCase {
     XCTAssertEqual(presented.view.layer.cornerRadius, 0, file: file, line: line)
     XCTAssertFalse(presented.view.layer.masksToBounds, file: file, line: line)
   }
+
+  private func assertInteractivePresentationResetsPresentedViewCornerRadius(completed: Bool,
+                                                                             file: StaticString = #filePath,
+                                                                             line: UInt = #line) {
+    let presenter = AppearanceRecordingViewController()
+    let presented = TestDismissibleViewController()
+    presented.configuredCornerRadius = 24
+
+    let interactionController = InteractivePopInteractionController(viewController: presented)
+    let presentationController = PHModalPresentationController(presentedViewController: presented,
+                                                               presenting: presenter)
+
+    XCTAssertEqual(presented.view.layer.cornerRadius, 24, file: file, line: line)
+    XCTAssertTrue(presented.view.layer.masksToBounds, file: file, line: line)
+
+    presentationController.presentationTransitionWillBegin()
+    presentationController.presentationTransitionDidEnd(completed)
+
+    XCTAssertEqual(presented.view.layer.cornerRadius, 0, file: file, line: line)
+    XCTAssertFalse(presented.view.layer.masksToBounds, file: file, line: line)
+    withExtendedLifetime(interactionController) {}
+  }
 }
 
 @MainActor
@@ -836,12 +892,14 @@ private extension PHInteractiveDismissibleTests {
   }
 
   func makeInteractiveDismissHarness(isAnimated: Bool = false,
+                                     preferredCornerRadius: CGFloat? = nil,
                                      file: StaticString = #filePath,
                                      line: UInt = #line) -> InteractiveDismissHarness {
     let containerFrame = CGRect(x: 0, y: 0, width: 320, height: 640)
     let containerView = UIView(frame: containerFrame)
     let presenterViewController = UIViewController()
     let destinationViewController = TestDismissibleViewController()
+    destinationViewController.configuredCornerRadius = preferredCornerRadius
     let finalFrame = CGRect(origin: .zero, size: containerFrame.size)
     let interactionController = InteractivePopInteractionController(viewController: destinationViewController)
     let transitionContext = TestTransitionContext(containerView: containerView,

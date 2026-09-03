@@ -71,6 +71,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
     // VC is a cache/singleton whose views outlive this instance), restore any subviews we
     // disabled — otherwise they stay `isUserInteractionEnabled = false` with nothing left to fix them.
     stopInteractiveFrameRendering()
+    resetPresentedViewCornerRadius()
     enableOtherTouches()
   }
 
@@ -80,11 +81,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
     gesture.cancelsTouchesInView = true
     view.addGestureRecognizer(gesture)
     
-    if let preferredCornerRadius = viewController.preferredCornerRadius, preferredCornerRadius > 0.0 {
-      let targetView: UIView = (viewController as? UINavigationController)?.view ?? view
-      targetView.layer.cornerRadius = preferredCornerRadius
-      targetView.layer.masksToBounds = true
-    }
+    applyPreferredCornerRadius()
   }
   
   private func resolveScrollViewGestures(_ scrollView: UIScrollView) {
@@ -130,6 +127,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
       return
     }
 
+    applyPreferredCornerRadius()
     disableOtherTouches()
     beginInteractiveFrameRendering()
     
@@ -375,6 +373,28 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
     distanceToTravel == 0 ? 0 : gestureVelocity / distanceToTravel
   }
 
+  // Internal so the dismissal lifecycle can be regression-tested without asking UIKit to
+  // dismiss an unpresented controller. This remains outside the package's public API.
+  internal func applyPreferredCornerRadius() {
+    guard let viewController else { return }
+    guard let preferredCornerRadius = viewController.preferredCornerRadius,
+          preferredCornerRadius > 0 else {
+      return
+    }
+
+    let targetView = (viewController as? UINavigationController)?.view ?? viewController.view
+    targetView?.layer.cornerRadius = preferredCornerRadius
+    targetView?.layer.masksToBounds = true
+  }
+
+  private func resetPresentedViewCornerRadius() {
+    guard let viewController else { return }
+    let targetView = (viewController as? UINavigationController)?.viewIfLoaded
+      ?? viewController.viewIfLoaded
+    targetView?.layer.cornerRadius = 0
+    targetView?.layer.masksToBounds = false
+  }
+
   @discardableResult
   internal func completeInterruptedAnimatorIfNeeded() -> Bool {
     if cancellationAnimator != nil {
@@ -454,6 +474,7 @@ public final class InteractivePopInteractionController: NSObject, InteractiveTra
 
   private func resetInteractionState() {
     stopInteractiveFrameRendering()
+    resetPresentedViewCornerRadius()
     transitionContext = nil
     insertedPresentedViewController = false
     interactionInProgress = false
