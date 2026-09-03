@@ -32,6 +32,13 @@ public final class PHModalPresentationController: UIPresentationController {
   
   public override func presentationTransitionDidEnd(_ completed: Bool) {
     presentingViewController.endAppearanceTransition()
+    
+    // The interaction controller rounds the presented root view while the zoom is in flight.
+    // Once the presentation resolves—whether it finishes or is cancelled—the transition no
+    // longer owns that appearance, so leave the reusable view in its normal rectangular state.
+    presentedViewController.viewIfLoaded?.layer.cornerRadius = 0
+    presentedViewController.viewIfLoaded?.layer.masksToBounds = false
+    
     if completed {
       presentingViewController.view.isHidden = true
     }
