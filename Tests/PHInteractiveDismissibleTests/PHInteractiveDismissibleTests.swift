@@ -19,12 +19,15 @@ final class PHInteractiveDismissibleTests: XCTestCase {
   func testNavigationControllerForwardsInteractiveDismissibleProperties() {
     let rootViewController = TestDismissibleViewController()
     let scrollView = UIScrollView()
+    let exclusiveView = UIView()
     rootViewController.configuredScrollView = scrollView
+    rootViewController.configuredExclusiveViews = [exclusiveView]
     rootViewController.configuredCornerRadius = 24
 
     let navigationController = UINavigationController(rootViewController: rootViewController)
 
     XCTAssertTrue(navigationController.dismissibleScrollView === scrollView)
+    XCTAssertTrue(navigationController.exclusiveViews.first === exclusiveView)
     XCTAssertEqual(navigationController.preferredCornerRadius, 24)
   }
 
@@ -42,6 +45,43 @@ final class PHInteractiveDismissibleTests: XCTestCase {
     XCTAssertTrue(destination.transitioningDelegate === destination.interactiveTransitionManager)
     XCTAssertTrue(destination.interactiveTransitionManager is PHModalTransitionManager)
     XCTAssertTrue(completionCalled)
+  }
+
+  func testModalPresentationControllerCompletesPresenterAppearanceOnDismissalFinish() {
+    let presenter = AppearanceRecordingViewController()
+    let presented = UIViewController()
+    let presentationController = PHModalPresentationController(presentedViewController: presented,
+                                                               presenting: presenter)
+
+    presenter.view.isHidden = true
+
+    presentationController.dismissalTransitionWillBegin()
+    presentationController.dismissalTransitionDidEnd(true)
+
+    XCTAssertEqual(presenter.appearanceEvents, [
+      .begin(isAppearing: true, animated: true),
+      .end
+    ])
+    XCTAssertFalse(presenter.view.isHidden)
+  }
+
+  func testModalPresentationControllerReversesPresenterAppearanceOnDismissalCancel() {
+    let presenter = AppearanceRecordingViewController()
+    let presented = UIViewController()
+    let presentationController = PHModalPresentationController(presentedViewController: presented,
+                                                               presenting: presenter)
+
+    presenter.view.isHidden = true
+
+    presentationController.dismissalTransitionWillBegin()
+    presentationController.dismissalTransitionDidEnd(false)
+
+    XCTAssertEqual(presenter.appearanceEvents, [
+      .begin(isAppearing: true, animated: true),
+      .begin(isAppearing: false, animated: true),
+      .end
+    ])
+    XCTAssertTrue(presenter.view.isHidden)
   }
 
   func testZoomWithExplicitSourceRectConfiguresZoomTransition() {
@@ -103,6 +143,18 @@ final class PHInteractiveDismissibleTests: XCTestCase {
 
     XCTAssertTrue(interactionController.gestureRecognizerShouldBegin(pinchGestureRecognizer))
     XCTAssertFalse(interactionController.interactionInProgress)
+  }
+
+  func testZoomDismissPanGesturesCancelControlTouchesWhenTheyBegin() {
+    let viewController = ZoomTestViewController()
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
+
+    let panGestures = viewController.view.gestureRecognizers?.compactMap { $0 as? UIPanGestureRecognizer } ?? []
+
+    XCTAssertFalse(interactionController.interactionInProgress)
+    XCTAssertEqual(panGestures.count, 2)
+    XCTAssertTrue(panGestures.allSatisfy(\.cancelsTouchesInView),
+                  "Dismiss pans should cancel an active control touch once a right/down drag begins")
   }
 
   func testZoomInteractionLazilyWiresDismissibleScrollViewGestures() {
@@ -169,6 +221,44 @@ final class PHInteractiveDismissibleTests: XCTestCase {
     XCTAssertEqual(gestureCountAfterSecondCheck, initialGestureCount)
   }
 
+  func testZoomNavigationControllerDismissGesturesIgnoreNavigationBarTouches() {
+    let rootViewController = ZoomTestViewController()
+    let navigationController = ZoomTestNavigationController(rootViewController: rootViewController)
+    navigationController.loadViewIfNeeded()
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: navigationController)
+    let barButtonHostView = UIView(frame: CGRect(x: 0, y: 0, width: 44, height: 44))
+    navigationController.navigationBar.addSubview(barButtonHostView)
+
+    XCTAssertFalse(interactionController.shouldReceiveGestureTouch(from: navigationController.navigationBar),
+                   "Dismiss gestures attached to a presented navigation controller must not observe navigation-bar touches")
+    XCTAssertFalse(interactionController.shouldReceiveGestureTouch(from: barButtonHostView),
+                   "Navigation-bar item touches should remain owned by UIKit so their actions can fire")
+    XCTAssertTrue(interactionController.shouldReceiveGestureTouch(from: rootViewController.view),
+                  "Content touches should still be eligible for interactive dismissal")
+  }
+
+  func testZoomInteractionRejectsTouchesInsideExclusiveViews() {
+    let viewController = ZoomTestViewController()
+    let exclusiveView = UIView()
+    let exclusiveSubview = UIView()
+    let allowedView = UIView()
+    viewController.view.addSubview(exclusiveView)
+    exclusiveView.addSubview(exclusiveSubview)
+    viewController.view.addSubview(allowedView)
+
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
+
+    XCTAssertTrue(interactionController.shouldReceiveGestureTouch(from: exclusiveSubview))
+
+    viewController.configuredExclusiveViews = [exclusiveView]
+
+    XCTAssertFalse(interactionController.shouldReceiveGestureTouch(from: exclusiveView))
+    XCTAssertFalse(interactionController.shouldReceiveGestureTouch(from: exclusiveSubview))
+    XCTAssertTrue(interactionController.shouldReceiveGestureTouch(from: allowedView))
+    XCTAssertTrue(interactionController.shouldReceiveGestureTouch(from: viewController.view))
+    XCTAssertTrue(interactionController.shouldReceiveGestureTouch(from: nil))
+  }
+
   func testZoomInteractionRecoversFromStaleInteractionInProgressFlag() {
     let viewController = ZoomTestViewController()
     let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
@@ -186,6 +276,158 @@ final class PHInteractiveDismissibleTests: XCTestCase {
                   "A stale interactionInProgress flag with no live transition must not block new gestures")
     XCTAssertFalse(interactionController.interactionInProgress,
                    "gestureRecognizerShouldBegin must clear the stale flag")
+  }
+
+  func testZoomRightPanCanBeginFromTranslationWhenEarlyVelocityIsNoisy() {
+    let viewController = ZoomTestViewController()
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
+    let panGestureRecognizer = StubPanGestureRecognizer()
+    panGestureRecognizer.stubTranslation = CGPoint(x: 12, y: 5)
+    panGestureRecognizer.stubVelocity = CGPoint(x: 20, y: 80)
+
+    XCTAssertTrue(interactionController.gestureRecognizerShouldBegin(panGestureRecognizer),
+                  "A rightward drag should not be rejected just because the first velocity sample is noisy")
+  }
+
+  func testZoomRightPanTracksFingerBeforeAddingResistance() {
+    let viewController = ZoomTestViewController()
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
+    let interactionDistance: CGFloat = 400
+
+    let shortPull = interactionController.horizontalDismissalTranslation(60,
+                                                                         distance: interactionDistance)
+    XCTAssertEqual(shortPull, 62.4, accuracy: 0.001,
+                   "The pickup phase should apply the subtle forward-only amplification")
+
+    let longPull = interactionController.horizontalDismissalTranslation(200,
+                                                                        distance: interactionDistance)
+    XCTAssertGreaterThan(longPull, 200 * 0.85,
+                         "Long rightward pulls should stay visually close to the finger")
+    XCTAssertLessThan(longPull, 200 * 1.04,
+                      "Long rightward pulls should blend into resistance after the pickup phase")
+
+    XCTAssertEqual(interactionController.horizontalDismissalTranslation(-40,
+                                                                        distance: interactionDistance),
+                   0,
+                   "The amplification must not apply to leftward travel")
+  }
+
+  func testZoomHorizontalPanConstraintPreservesVerticalTravel() {
+    let viewController = ZoomTestViewController()
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
+    let containerBounds = CGRect(x: 0, y: 0, width: 400, height: 800)
+
+    for translationY in stride(from: CGFloat(-80), through: 80, by: 8) {
+      let input = CGAffineTransform(a: 0.96,
+                                    b: 0,
+                                    c: 0,
+                                    d: 0.96,
+                                    tx: 120,
+                                    ty: translationY)
+      let result = interactionController.horizontalPanConstrainedTransform(input,
+                                                                           in: containerBounds)
+      XCTAssertEqual(result.ty, translationY, accuracy: 0.001,
+                     "Horizontal bounds handling must never invert or clamp vertical travel")
+    }
+  }
+
+  func testZoomPinchFadesNavigationBarBeforeItVisiblyScales() {
+    let viewController = ZoomTestViewController()
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
+    let initialAlpha: CGFloat = 0.8
+
+    XCTAssertEqual(interactionController.navigationBarAlpha(forVisualScale: 1.0,
+                                                            initialAlpha: initialAlpha),
+                   initialAlpha,
+                   accuracy: 0.001)
+    XCTAssertEqual(interactionController.navigationBarAlpha(forVisualScale: 0.94,
+                                                            initialAlpha: initialAlpha),
+                   initialAlpha * 0.5,
+                   accuracy: 0.001)
+    XCTAssertEqual(interactionController.navigationBarAlpha(forVisualScale: 0.88,
+                                                            initialAlpha: initialAlpha),
+                   0.0,
+                   accuracy: 0.001)
+    XCTAssertEqual(interactionController.navigationBarAlpha(forVisualScale: 0.7,
+                                                            initialAlpha: initialAlpha),
+                   0.0,
+                   accuracy: 0.001)
+  }
+
+  func testZoomInteractiveFrameInterpolationIsRefreshRateIndependent() {
+    let viewController = ZoomTestViewController()
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: viewController)
+
+    let alphaAt120Hz = interactionController.interactiveFrameInterpolationAlpha(forFrameDuration: 1.0 / 120.0)
+    let alphaAt60Hz = interactionController.interactiveFrameInterpolationAlpha(forFrameDuration: 1.0 / 60.0)
+
+    XCTAssertEqual(alphaAt120Hz, 0.72, accuracy: 0.001)
+    XCTAssertEqual(alphaAt60Hz, 1.0 - pow(1.0 - 0.72, 2.0), accuracy: 0.001)
+    XCTAssertGreaterThan(alphaAt60Hz, alphaAt120Hz,
+                         "A longer display interval should catch up further to preserve response time")
+  }
+
+  func testZoomInteractionCancelsLateTransitionContextAfterFastGestureReset() {
+    let containerView = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 640))
+    let presentedViewController = ZoomTestViewController()
+    let presentingViewController = UIViewController()
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: presentedViewController)
+    let transitionContext = TestTransitionContext(containerView: containerView,
+                                                  fromViewController: presentedViewController,
+                                                  toViewController: presentingViewController,
+                                                  finalFrame: containerView.bounds)
+
+    presentedViewController.loadViewIfNeeded()
+    presentingViewController.loadViewIfNeeded()
+    containerView.addSubview(presentingViewController.view)
+    containerView.addSubview(presentedViewController.view)
+
+    XCTAssertFalse(interactionController.interactionInProgress)
+
+    interactionController.startInteractiveTransition(transitionContext)
+
+    XCTAssertTrue(transitionContext.cancelInteractiveTransitionCalled,
+                  "A late context for an already-ended gesture must be cancelled immediately")
+    XCTAssertEqual(transitionContext.completedTransition, false)
+    XCTAssertFalse(interactionController.interactionInProgress)
+  }
+
+  func testZoomInteractionAllowsTransitionContextAfterNextRunLoop() {
+    let containerView = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 640))
+    let presentedViewController = ZoomTestViewController()
+    let presentingViewController = UIViewController()
+    let sourceView = UIView(frame: CGRect(x: 24, y: 32, width: 80, height: 80))
+    let interactionController = PHZoomInteractivePopInteractionController(viewController: presentedViewController)
+    let transitionContext = TestTransitionContext(containerView: containerView,
+                                                  fromViewController: presentedViewController,
+                                                  toViewController: presentingViewController,
+                                                  finalFrame: containerView.bounds)
+    let panGestureRecognizer = StubPanGestureRecognizer()
+    let handleSelector = NSSelectorFromString("handleGesture:")
+
+    presentedViewController.configuredSourceView = sourceView
+    presentedViewController.loadViewIfNeeded()
+    presentingViewController.loadViewIfNeeded()
+    presentedViewController.view.frame = containerView.bounds
+    presentingViewController.view.frame = containerView.bounds
+    presentingViewController.view.addSubview(sourceView)
+    containerView.addSubview(presentingViewController.view)
+    containerView.addSubview(presentedViewController.view)
+    presentedViewController.view.addGestureRecognizer(panGestureRecognizer)
+
+    panGestureRecognizer.setStubState(.began)
+    panGestureRecognizer.stubVelocity = CGPoint(x: 100, y: 0)
+    interactionController.perform(handleSelector, with: panGestureRecognizer)
+    pumpRunLoop(for: 0.01)
+
+    XCTAssertTrue(interactionController.interactionInProgress)
+
+    interactionController.startInteractiveTransition(transitionContext)
+
+    XCTAssertFalse(transitionContext.cancelInteractiveTransitionCalled,
+                   "The stale-gesture recovery must not beat a slightly delayed UIKit transition context")
+    XCTAssertNil(transitionContext.completedTransition)
+    XCTAssertTrue(interactionController.interactionInProgress)
   }
 
   func testZoomInteractionDoesNotLeakDisabledStateOnReentry() {
@@ -242,17 +484,146 @@ final class PHInteractiveDismissibleTests: XCTestCase {
                   "enableOtherTouches must restore the subview — if it stays disabled, the snapshot was clobbered")
   }
 
+  func testInteractivePopCancelsLateTransitionContextAfterFastGestureReset() {
+    let containerView = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 640))
+    let presentedViewController = TestDismissibleViewController()
+    let presentingViewController = UIViewController()
+    let interactionController = InteractivePopInteractionController(viewController: presentedViewController)
+    let transitionContext = TestTransitionContext(containerView: containerView,
+                                                  fromViewController: presentedViewController,
+                                                  toViewController: presentingViewController,
+                                                  finalFrame: containerView.bounds)
+
+    presentedViewController.loadViewIfNeeded()
+    presentingViewController.loadViewIfNeeded()
+    containerView.addSubview(presentingViewController.view)
+    containerView.addSubview(presentedViewController.view)
+
+    XCTAssertFalse(interactionController.interactionInProgress)
+
+    interactionController.startInteractiveTransition(transitionContext)
+
+    XCTAssertTrue(transitionContext.cancelInteractiveTransitionCalled,
+                  "A late context for an already-ended gesture must be cancelled immediately")
+    XCTAssertEqual(transitionContext.completedTransition, false)
+    XCTAssertFalse(interactionController.interactionInProgress)
+  }
+
+  func testInteractivePopRightPanCanBeginFromTranslationWhenEarlyVelocityIsNoisy() {
+    let viewController = TestDismissibleViewController()
+    let interactionController = InteractivePopInteractionController(viewController: viewController)
+    let panGestureRecognizer = StubPanGestureRecognizer()
+    panGestureRecognizer.stubTranslation = CGPoint(x: 12, y: 5)
+    panGestureRecognizer.stubVelocity = CGPoint(x: 20, y: 80)
+
+    XCTAssertTrue(interactionController.gestureRecognizerShouldBegin(panGestureRecognizer),
+                  "A rightward drag should not be rejected just because the first velocity sample is noisy")
+  }
+
+  func testInteractivePopRejectsTouchesInsideExclusiveViews() {
+    let viewController = TestDismissibleViewController()
+    let exclusiveView = UIView()
+    let exclusiveSubview = UIView()
+    let allowedView = UIView()
+    viewController.view.addSubview(exclusiveView)
+    exclusiveView.addSubview(exclusiveSubview)
+    viewController.view.addSubview(allowedView)
+
+    let interactionController = InteractivePopInteractionController(viewController: viewController)
+
+    XCTAssertTrue(interactionController.shouldReceiveGestureTouch(from: exclusiveSubview))
+
+    // The list is deliberately read when UIKit offers a touch, so changing content or replacing
+    // a navigation controller's top view controller does not require cache invalidation.
+    viewController.configuredExclusiveViews = [exclusiveView]
+
+    XCTAssertFalse(interactionController.shouldReceiveGestureTouch(from: exclusiveView))
+    XCTAssertFalse(interactionController.shouldReceiveGestureTouch(from: exclusiveSubview))
+    XCTAssertTrue(interactionController.shouldReceiveGestureTouch(from: allowedView))
+    XCTAssertTrue(interactionController.shouldReceiveGestureTouch(from: viewController.view))
+    XCTAssertTrue(interactionController.shouldReceiveGestureTouch(from: nil))
+  }
+
+  func testInteractivePopFrameInterpolationIsRefreshRateIndependent() {
+    let viewController = TestDismissibleViewController()
+    let interactionController = InteractivePopInteractionController(viewController: viewController)
+
+    let alphaAt120Hz = interactionController.interactiveFrameInterpolationAlpha(forFrameDuration: 1.0 / 120.0)
+    let alphaAt60Hz = interactionController.interactiveFrameInterpolationAlpha(forFrameDuration: 1.0 / 60.0)
+
+    XCTAssertEqual(alphaAt120Hz, 0.72, accuracy: 0.001)
+    XCTAssertEqual(alphaAt60Hz, 1.0 - pow(1.0 - 0.72, 2.0), accuracy: 0.001)
+    XCTAssertGreaterThan(alphaAt60Hz, alphaAt120Hz,
+                         "A longer display interval should catch up further to preserve response time")
+  }
+
+  func testInteractivePopAllowsTransitionContextAfterNextRunLoop() {
+    let containerView = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 640))
+    let presentedViewController = TestDismissibleViewController()
+    let presentingViewController = UIViewController()
+    let interactionController = InteractivePopInteractionController(viewController: presentedViewController)
+    let transitionContext = TestTransitionContext(containerView: containerView,
+                                                  fromViewController: presentedViewController,
+                                                  toViewController: presentingViewController,
+                                                  finalFrame: containerView.bounds)
+    let panGestureRecognizer = StubPanGestureRecognizer()
+    let handleSelector = NSSelectorFromString("handleGesture:")
+
+    presentedViewController.loadViewIfNeeded()
+    presentingViewController.loadViewIfNeeded()
+    presentedViewController.view.frame = containerView.bounds
+    presentingViewController.view.frame = containerView.bounds
+    containerView.addSubview(presentingViewController.view)
+    containerView.addSubview(presentedViewController.view)
+    presentedViewController.view.addGestureRecognizer(panGestureRecognizer)
+
+    panGestureRecognizer.setStubState(.began)
+    panGestureRecognizer.stubVelocity = CGPoint(x: 100, y: 0)
+    interactionController.perform(handleSelector, with: panGestureRecognizer)
+    pumpRunLoop(for: 0.01)
+
+    XCTAssertTrue(interactionController.interactionInProgress)
+
+    interactionController.startInteractiveTransition(transitionContext)
+
+    XCTAssertFalse(transitionContext.cancelInteractiveTransitionCalled,
+                   "The stale-gesture recovery must not beat a slightly delayed UIKit transition context")
+    XCTAssertNil(transitionContext.completedTransition)
+    XCTAssertTrue(interactionController.interactionInProgress)
+  }
+
+  func testInteractivePopPanGestureCancelsControlTouchesWhenItBegins() {
+    let viewController = TestDismissibleViewController()
+    let interactionController = InteractivePopInteractionController(viewController: viewController)
+
+    let panGestures = viewController.view.gestureRecognizers?.compactMap { $0 as? UIPanGestureRecognizer } ?? []
+
+    XCTAssertFalse(interactionController.interactionInProgress)
+    XCTAssertEqual(panGestures.count, 1)
+    XCTAssertTrue(panGestures.allSatisfy(\.cancelsTouchesInView),
+                  "Interactive pop pan should cancel an active control touch once a right drag begins")
+  }
+
+  func testInteractivePopScrollPanGestureCancelsControlTouchesWhenItBegins() {
+    let viewController = TestDismissibleViewController()
+    let scrollView = UIScrollView()
+    viewController.configuredScrollView = scrollView
+    let interactionController = InteractivePopInteractionController(viewController: viewController)
+
+    let customPanGestures = scrollView.gestureRecognizers?
+      .compactMap { $0 as? UIPanGestureRecognizer }
+      .filter { $0 !== scrollView.panGestureRecognizer } ?? []
+
+    XCTAssertFalse(interactionController.interactionInProgress)
+    XCTAssertEqual(customPanGestures.count, 1)
+    XCTAssertTrue(customPanGestures.allSatisfy(\.cancelsTouchesInView),
+                  "Interactive pop scroll pan should cancel an active control touch once a right drag begins")
+  }
+
   func testInteractiveDismissGestureCancelKeepsPresentedViewController() {
     let harness = makeInteractiveDismissHarness()
-    let gestureRecognizer = StubPanGestureRecognizer()
-    harness.destinationViewController.view.addGestureRecognizer(gestureRecognizer)
 
-    drivePanGesture(on: harness.interactionController,
-                    gestureRecognizer: gestureRecognizer,
-                    translationX: 40,
-                    endVelocityX: 0)
-
-    waitForTransitionCompletion(harness.transitionContext, timeout: 2.0)
+    harness.interactionController.cancel(initialSpringVelocity: 0)
 
     XCTAssertTrue(harness.transitionContext.cancelInteractiveTransitionCalled)
     XCTAssertEqual(harness.transitionContext.completedTransition, false)
@@ -261,19 +632,36 @@ final class PHInteractiveDismissibleTests: XCTestCase {
 
   func testInteractiveDismissGestureFinishDismissesPresentedViewController() {
     let harness = makeInteractiveDismissHarness()
-    let gestureRecognizer = StubPanGestureRecognizer()
-    harness.destinationViewController.view.addGestureRecognizer(gestureRecognizer)
 
-    drivePanGesture(on: harness.interactionController,
-                    gestureRecognizer: gestureRecognizer,
-                    translationX: 320,
-                    endVelocityX: 900)
-
-    waitForTransitionCompletion(harness.transitionContext, timeout: 2.0)
+    harness.interactionController.finish(initialSpringVelocity: 0)
 
     XCTAssertTrue(harness.transitionContext.finishInteractiveTransitionCalled)
     XCTAssertEqual(harness.transitionContext.completedTransition, true)
     XCTAssertEqual(harness.destinationViewController.view.frame.minX, harness.transitionContext.containerView.bounds.width)
+  }
+
+  func testInteractiveDismissCompletesCancelWhenCancelAnimatorIsInterrupted() {
+    let harness = makeInteractiveDismissHarness(isAnimated: true)
+
+    harness.interactionController.cancel(initialSpringVelocity: 0)
+    harness.interactionController.completeInterruptedAnimatorIfNeeded()
+    pumpRunLoop(for: 0.05)
+
+    XCTAssertTrue(harness.transitionContext.cancelInteractiveTransitionCalled)
+    XCTAssertEqual(harness.transitionContext.completedTransition, false)
+    XCTAssertFalse(harness.interactionController.interactionInProgress)
+  }
+
+  func testInteractiveDismissCompletesFinishWhenFinishAnimatorIsInterrupted() {
+    let harness = makeInteractiveDismissHarness(isAnimated: true)
+
+    harness.interactionController.finish(initialSpringVelocity: 0)
+    harness.interactionController.completeInterruptedAnimatorIfNeeded()
+    pumpRunLoop(for: 0.05)
+
+    XCTAssertTrue(harness.transitionContext.finishInteractiveTransitionCalled)
+    XCTAssertEqual(harness.transitionContext.completedTransition, true)
+    XCTAssertFalse(harness.interactionController.interactionInProgress)
   }
 
   func testInteractivePopRestoresDisabledTouchesOnDeinit() {
@@ -311,6 +699,33 @@ final class PHInteractiveDismissibleTests: XCTestCase {
     XCTAssertTrue(interactiveSubview.isUserInteractionEnabled,
                   "deinit must restore subviews disabled by an in-flight interaction")
   }
+
+  func testZoomSourceVisibilityRestoresPreviousSourceWhenDynamicSourceChanges() {
+    let viewController = ZoomTestViewController()
+    let previousSourceView = UIView()
+    let currentSourceView = UIView()
+
+    viewController._hideZoomTransitionSourceView(previousSourceView)
+    XCTAssertTrue(previousSourceView.isHidden)
+
+    viewController._restoreHiddenZoomTransitionSourceView(ifDifferentFrom: currentSourceView)
+
+    XCTAssertFalse(previousSourceView.isHidden,
+                   "Changing the resolved source view must reveal the source hidden by the previous zoom source")
+    XCTAssertNil(viewController._zoomTransitionHiddenSourceView)
+  }
+
+  func testZoomSourceVisibilityKeepsSameSourceHiddenWhenDismissalCancels() {
+    let viewController = ZoomTestViewController()
+    let sourceView = UIView()
+
+    viewController._hideZoomTransitionSourceView(sourceView)
+    viewController._restoreHiddenZoomTransitionSourceView(ifDifferentFrom: sourceView)
+
+    XCTAssertTrue(sourceView.isHidden,
+                  "A cancelled dismissal with the same source should preserve the presentation-hidden source")
+    XCTAssertTrue(viewController._zoomTransitionHiddenSourceView === sourceView)
+  }
 }
 
 @MainActor
@@ -327,10 +742,15 @@ private final class CapturingPresenterViewController: UIViewController {
 
 private final class TestDismissibleViewController: UIViewController, InteractiveDismissible {
   var configuredScrollView: UIScrollView?
+  var configuredExclusiveViews: [UIView] = []
   var configuredCornerRadius: CGFloat?
 
   var dismissibleScrollView: UIScrollView? {
     configuredScrollView
+  }
+
+  var exclusiveViews: [UIView] {
+    configuredExclusiveViews
   }
 
   var preferredCornerRadius: CGFloat? {
@@ -340,15 +760,44 @@ private final class TestDismissibleViewController: UIViewController, Interactive
 
 private final class ZoomTestViewController: UIViewController, InteractiveDismissible, ZoomTransitioning {
   var configuredScrollView: UIScrollView?
+  var configuredExclusiveViews: [UIView] = []
+  var configuredSourceView: UIView?
 
   var dismissibleScrollView: UIScrollView? {
     configuredScrollView
+  }
+
+  var exclusiveViews: [UIView] {
+    configuredExclusiveViews
+  }
+
+  func sourceView(for transition: PHZoomTransitioning.Transition) -> UIView? {
+    configuredSourceView
   }
 }
 
 private final class ZoomTestNavigationController: UINavigationController, ZoomTransitioning {}
 
 private final class TestTransitioningDelegate: NSObject, UIViewControllerTransitioningDelegate {}
+
+private enum AppearanceEvent: Equatable {
+  case begin(isAppearing: Bool, animated: Bool)
+  case end
+}
+
+private final class AppearanceRecordingViewController: UIViewController {
+  private(set) var appearanceEvents: [AppearanceEvent] = []
+
+  override func beginAppearanceTransition(_ isAppearing: Bool, animated: Bool) {
+    appearanceEvents.append(.begin(isAppearing: isAppearing, animated: animated))
+    super.beginAppearanceTransition(isAppearing, animated: animated)
+  }
+
+  override func endAppearanceTransition() {
+    appearanceEvents.append(.end)
+    super.endAppearanceTransition()
+  }
+}
 
 @MainActor
 private extension PHInteractiveDismissibleTests {
@@ -359,7 +808,8 @@ private extension PHInteractiveDismissibleTests {
     let transitionContext: TestTransitionContext
   }
 
-  func makeInteractiveDismissHarness(file: StaticString = #filePath,
+  func makeInteractiveDismissHarness(isAnimated: Bool = false,
+                                     file: StaticString = #filePath,
                                      line: UInt = #line) -> InteractiveDismissHarness {
     let containerFrame = CGRect(x: 0, y: 0, width: 320, height: 640)
     let containerView = UIView(frame: containerFrame)
@@ -371,6 +821,7 @@ private extension PHInteractiveDismissibleTests {
                                                   fromViewController: destinationViewController,
                                                   toViewController: presenterViewController,
                                                   finalFrame: finalFrame)
+    transitionContext.isAnimated = isAnimated
 
     presenterViewController.loadViewIfNeeded()
     presenterViewController.view.frame = containerFrame
@@ -378,8 +829,8 @@ private extension PHInteractiveDismissibleTests {
     destinationViewController.view.frame = finalFrame
     containerView.addSubview(presenterViewController.view)
     containerView.addSubview(destinationViewController.view)
-    interactionController.startInteractiveTransition(transitionContext)
     interactionController.interactionInProgress = true
+    interactionController.startInteractiveTransition(transitionContext)
 
     XCTAssertNotNil(destinationViewController.view.superview, file: file, line: line)
 

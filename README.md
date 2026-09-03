@@ -117,6 +117,18 @@ zoom(
 - `dimmingColor`
 - `dimmingVisualEffect`
 
+### ProMotion
+
+To allow interactive transitions to render above 60 Hz on supported iPhones, enable the full
+Core Animation frame-rate range in the host app's `Info.plist`:
+
+```xml
+<key>CADisableMinimumFrameDurationOnPhone</key>
+<true/>
+```
+
+This is a host-application setting and cannot be injected by a Swift package.
+
 ## Installation
 From Xcode menu bar:
 1.  File

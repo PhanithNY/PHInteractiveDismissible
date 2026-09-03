@@ -102,6 +102,8 @@ extension UIViewController {
     static var zoomTransitionSourceRect: UInt8 = 0
     static var zoomTransitionSourceView: UInt8 = 0
     static var zoomTransitionSourceViewProvider: UInt8 = 0
+    static var zoomTransitionHiddenSourceView: UInt8 = 0
+    static var zoomTransitionHiddenSourceViewWasHidden: UInt8 = 0
   }
 
   fileprivate final class WeakViewBox {
@@ -166,5 +168,56 @@ extension UIViewController {
       let box = newValue.map(SourceViewProviderBox.init)
       objc_setAssociatedObject(self, &Holder.zoomTransitionSourceViewProvider, box, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     }
+  }
+
+  var _zoomTransitionHiddenSourceView: UIView? {
+    get {
+      (objc_getAssociatedObject(self, &Holder.zoomTransitionHiddenSourceView) as? WeakViewBox)?.value
+    }
+    set {
+      let box = WeakViewBox(newValue)
+      objc_setAssociatedObject(self, &Holder.zoomTransitionHiddenSourceView, box, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+  }
+
+  var _zoomTransitionHiddenSourceViewWasHidden: Bool {
+    get {
+      (objc_getAssociatedObject(self, &Holder.zoomTransitionHiddenSourceViewWasHidden) as? Bool) ?? false
+    }
+    set {
+      objc_setAssociatedObject(self, &Holder.zoomTransitionHiddenSourceViewWasHidden, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+  }
+
+  func _hideZoomTransitionSourceView(_ sourceView: UIView) {
+    if let previousSourceView = _zoomTransitionHiddenSourceView,
+       previousSourceView !== sourceView {
+      previousSourceView.isHidden = _zoomTransitionHiddenSourceViewWasHidden
+      _zoomTransitionHiddenSourceView = nil
+    }
+
+    if _zoomTransitionHiddenSourceView !== sourceView {
+      _zoomTransitionHiddenSourceViewWasHidden = sourceView.isHidden
+      _zoomTransitionHiddenSourceView = sourceView
+    }
+
+    sourceView.isHidden = true
+  }
+
+  func _restoreHiddenZoomTransitionSourceView(ifDifferentFrom sourceView: UIView) {
+    guard let hiddenSourceView = _zoomTransitionHiddenSourceView,
+          hiddenSourceView !== sourceView else {
+      return
+    }
+
+    hiddenSourceView.isHidden = _zoomTransitionHiddenSourceViewWasHidden
+    _zoomTransitionHiddenSourceView = nil
+    _zoomTransitionHiddenSourceViewWasHidden = false
+  }
+
+  func _revealZoomTransitionHiddenSourceView() {
+    _zoomTransitionHiddenSourceView?.isHidden = false
+    _zoomTransitionHiddenSourceView = nil
+    _zoomTransitionHiddenSourceViewWasHidden = false
   }
 }

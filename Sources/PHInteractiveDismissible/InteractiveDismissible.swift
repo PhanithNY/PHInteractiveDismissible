@@ -14,6 +14,9 @@ private enum InteractiveDismissibleAssociatedKeys {
 
 public protocol InteractiveDismissible: UIViewController {
   var dismissibleScrollView: UIScrollView? { get }
+  /// Views whose touches must not start an interactive dismissal gesture.
+  /// A touch in any descendant of one of these views is excluded as well.
+  var exclusiveViews: [UIView] { get }
   var interactiveTransitionManager: UIViewControllerTransitioningDelegate? { get set }
   var preferredCornerRadius: CGFloat? { get }
   /// Return `false` to prevent the interactive dismiss gesture from starting.
@@ -38,6 +41,10 @@ public extension InteractiveDismissible {
 
   var dismissibleScrollView: UIScrollView? {
     nil
+  }
+
+  var exclusiveViews: [UIView] {
+    []
   }
 
   var interactiveDismissShouldBegin: (() -> Bool)? {
@@ -71,9 +78,45 @@ public extension InteractiveDismissible {
   }
 }
 
+extension InteractiveDismissible {
+  /// Checks only the touched view's ancestor chain. Building an identity set makes the lookup
+  /// O(exclusiveViews.count + view-depth), and this runs once when UIKit offers a touch to a
+  /// recognizer rather than during interactive frame rendering.
+  internal func shouldReceiveInteractiveDismissTouch(from touchedView: UIView?) -> Bool {
+    guard let touchedView else {
+      return true
+    }
+
+    let exclusiveViews = exclusiveViews
+    guard !exclusiveViews.isEmpty else {
+      return true
+    }
+
+    var exclusiveViewIdentifiers = Set<ObjectIdentifier>()
+    exclusiveViewIdentifiers.reserveCapacity(exclusiveViews.count)
+    for exclusiveView in exclusiveViews {
+      exclusiveViewIdentifiers.insert(ObjectIdentifier(exclusiveView))
+    }
+
+    var candidateView: UIView? = touchedView
+    while let candidate = candidateView {
+      if exclusiveViewIdentifiers.contains(ObjectIdentifier(candidate)) {
+        return false
+      }
+      candidateView = candidate.superview
+    }
+
+    return true
+  }
+}
+
 extension UINavigationController: InteractiveDismissible {
   public var dismissibleScrollView: UIScrollView? {
     (topViewController as? InteractiveDismissible)?.dismissibleScrollView
+  }
+
+  public var exclusiveViews: [UIView] {
+    (topViewController as? InteractiveDismissible)?.exclusiveViews ?? []
   }
 
   public var preferredCornerRadius: CGFloat? {
