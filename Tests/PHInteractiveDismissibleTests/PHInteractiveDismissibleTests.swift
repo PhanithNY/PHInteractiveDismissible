@@ -141,6 +141,34 @@ final class PHInteractiveDismissibleTests: XCTestCase {
     XCTAssertNil(destination._zoomTransitionSourceRect)
   }
 
+  func testZoomSetupPreservesRootLayerAppearanceAcrossPresentationStyles() {
+    for style: UIModalPresentationStyle in [.custom, .overCurrentContext] {
+      for navigationHosted in [false, true] {
+        for radius: CGFloat in [0, 12] {
+          for clips in [false, true] {
+            let presenter = CapturingPresenterViewController()
+            let content = ZoomTestViewController()
+            let destination: UIViewController & InteractiveDismissible & ZoomTransitioning = navigationHosted
+              ? ZoomTestNavigationController(rootViewController: content)
+              : content
+            destination.view.layer.cornerRadius = radius
+            destination.view.layer.masksToBounds = clips
+            let source = UIView(frame: CGRect(x: 10, y: 20, width: 40, height: 50))
+
+            presenter.zoom(to: destination, from: source, with: style)
+
+            XCTAssertTrue(presenter.capturedPresentedViewController === destination)
+            XCTAssertEqual(destination.modalPresentationStyle, style)
+            XCTAssertEqual(destination.view.layer.cornerRadius, radius,
+                           "Zoom setup must not overwrite the root layer's existing radius")
+            XCTAssertEqual(destination.view.layer.masksToBounds, clips,
+                           "Zoom setup must not change the root layer's clipping")
+          }
+        }
+      }
+    }
+  }
+
   func testZoomPresentationCompletionResetsPresentedViewCornerRadius() {
     assertZoomPresentationResetsPresentedViewCornerRadius(completed: true)
   }
@@ -845,6 +873,8 @@ private final class ZoomTestViewController: UIViewController, InteractiveDismiss
   var configuredScrollView: UIScrollView?
   var configuredExclusiveViews: [UIView] = []
   var configuredSourceView: UIView?
+
+  var preferredCornerRadius: CGFloat? { 24 }
 
   var dismissibleScrollView: UIScrollView? {
     configuredScrollView

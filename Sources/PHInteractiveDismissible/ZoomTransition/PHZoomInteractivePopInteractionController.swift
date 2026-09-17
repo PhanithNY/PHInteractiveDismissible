@@ -217,11 +217,8 @@ public final class PHZoomInteractivePopInteractionController: NSObject, Interact
       popGesture.require(toFail: gesture)
     }
 
-    if let preferredCornerRadius = viewController.preferredCornerRadius, preferredCornerRadius > 0.0 {
-      let targetView: UIView = (viewController as? UINavigationController)?.view ?? view
-      targetView.layer.cornerRadius = preferredCornerRadius
-      targetView.layer.masksToBounds = true
-    }
+    // Zoom rounding belongs to the temporary transition mask. Changing the root layer
+    // here would outlive the transition with styles such as .overCurrentContext.
   }
 
   private func resolveScrollViewGestures(_ scrollView: UIScrollView) {
