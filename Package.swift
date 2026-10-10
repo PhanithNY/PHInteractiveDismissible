@@ -23,8 +23,12 @@ let package = Package(
         .target(
             name: "PHInteractiveDismissible",
             dependencies: ["PHInteractiveDismissibleObjC"]),
+        .target(
+            name: "PHInteractiveDismissibleObjCTestSupport",
+            path: "Tests/PHInteractiveDismissibleObjCTestSupport",
+            publicHeadersPath: "include"),
         .testTarget(
             name: "PHInteractiveDismissibleTests",
-            dependencies: ["PHInteractiveDismissible"]),
+            dependencies: ["PHInteractiveDismissible", "PHInteractiveDismissibleObjC", "PHInteractiveDismissibleObjCTestSupport"]),
     ]
 )

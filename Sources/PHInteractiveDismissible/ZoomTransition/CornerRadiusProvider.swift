@@ -16,6 +16,6 @@ public enum CornerRadiusProvider {
 
 extension UIScreen {
   fileprivate var deviceCornerRadius: CGFloat {
-    CGFloat(truncating: PrivateCornerRadiusReader.displayCornerRadius(for: self) ?? 0)
+    CGFloat(truncating: PHInteractiveDismissiblePrivateCornerRadiusReader.displayCornerRadius(for: self) ?? 0)
   }
 }

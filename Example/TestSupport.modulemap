@@ -1,0 +1,5 @@
+// The Xcode test bundle compiles the fixture; SwiftPM builds its own test module.
+module PHInteractiveDismissibleObjCTestSupport {
+  header "../Tests/PHInteractiveDismissibleObjCTestSupport/include/PHInteractiveDismissibleThrowingCornerRadiusFixture.h"
+  export *
+}

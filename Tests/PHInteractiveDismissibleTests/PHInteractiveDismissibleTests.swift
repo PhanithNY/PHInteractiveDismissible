@@ -1,3 +1,5 @@
+import PHInteractiveDismissibleObjC
+import PHInteractiveDismissibleObjCTestSupport
 import ObjectiveC.runtime
 import UIKit
 import XCTest
@@ -5,6 +7,57 @@ import XCTest
 
 @MainActor
 final class PHInteractiveDismissibleTests: XCTestCase {
+  func testCornerRadiusReaderAcceptsValidCGFloatResults() {
+    let fixture = CornerRadiusFixture()
+    for radius: CGFloat in [0, 37, 62.5] {
+      fixture.radius = radius
+      XCTAssertEqual(PHInteractiveDismissiblePrivateCornerRadiusReader.displayCornerRadius(for: fixture)?.doubleValue, Double(radius))
+    }
+  }
+
+  func testCornerRadiusReaderRejectsInvalidNumbers() {
+    let fixture = CornerRadiusFixture()
+    for radius: CGFloat in [-1, .nan, .infinity, -.infinity] {
+      fixture.radius = radius
+      XCTAssertNil(PHInteractiveDismissiblePrivateCornerRadiusReader.displayCornerRadius(for: fixture))
+    }
+  }
+
+  func testCornerRadiusReaderHandlesUnavailableGetter() {
+    XCTAssertNil(PHInteractiveDismissiblePrivateCornerRadiusReader.displayCornerRadius(for: NSObject()))
+  }
+
+  func testCornerRadiusReaderCatchesObjectiveCExceptions() {
+    XCTAssertNil(PHInteractiveDismissiblePrivateCornerRadiusReader.displayCornerRadius(for: PHInteractiveDismissibleThrowingCornerRadiusFixture()))
+  }
+
+  func testCornerRadiusReaderRejectsIncompatibleReturnTypesWithoutCallingThem() {
+    let objectFixture = ObjectCornerRadiusFixture()
+    let integerFixture = IntegerCornerRadiusFixture()
+    XCTAssertNil(PHInteractiveDismissiblePrivateCornerRadiusReader.displayCornerRadius(for: objectFixture))
+    XCTAssertNil(PHInteractiveDismissiblePrivateCornerRadiusReader.displayCornerRadius(for: integerFixture))
+    XCTAssertFalse(objectFixture.wasCalled)
+    XCTAssertFalse(integerFixture.wasCalled)
+  }
+
+  func testCornerRadiusReaderRejectsIncompatibleArgumentCount() throws {
+    let name = "PHInteractiveDismissibleArgumentCountFixture_" + UUID().uuidString.replacingOccurrences(of: "-", with: "")
+    let fixtureClass: AnyClass = try XCTUnwrap(objc_allocateClassPair(NSObject.self, name, 0))
+    let getter: @convention(c) (AnyObject, Selector) -> CGFloat = { _, _ in 42 }
+    let implementation = unsafeBitCast(getter, to: IMP.self)
+    // Deliberately inconsistent metadata: the selector is a getter but its
+    // runtime signature declares an extra argument. Never invoke this IMP.
+    let returnType = MemoryLayout<CGFloat>.size == MemoryLayout<Double>.size ? "d" : "f"
+    XCTAssertTrue(class_addMethod(fixtureClass, NSSelectorFromString("_displayCornerRadius"), implementation, returnType + "@:@"))
+    objc_registerClassPair(fixtureClass)
+    let fixture = try XCTUnwrap(class_createInstance(fixtureClass, 0) as? NSObject)
+    XCTAssertNil(PHInteractiveDismissiblePrivateCornerRadiusReader.displayCornerRadius(for: fixture))
+  }
+
+  func testCornerRadiusReaderUsesSubclassGetterAndItsSignature() {
+    XCTAssertEqual(PHInteractiveDismissiblePrivateCornerRadiusReader.displayCornerRadius(for: OverriddenCornerRadiusFixture())?.doubleValue, 52)
+  }
+
   func testInteractiveTransitionManagerUsesAssociatedStorage() {
     let viewController = TestDismissibleViewController()
     let delegate = TestTransitioningDelegate()
@@ -1126,4 +1179,29 @@ private final class StubPinchGestureRecognizer: UIPinchGestureRecognizer {
   override var numberOfTouches: Int {
     stubNumberOfTouches
   }
+}
+
+private class CornerRadiusFixture: NSObject {
+  var radius: CGFloat = 37
+  @objc(_displayCornerRadius) dynamic func displayCornerRadius() -> CGFloat { radius }
+}
+
+private final class ObjectCornerRadiusFixture: NSObject {
+  var wasCalled = false
+  @objc(_displayCornerRadius) dynamic func displayCornerRadius() -> NSNumber {
+    wasCalled = true
+    return 37
+  }
+}
+
+private final class IntegerCornerRadiusFixture: NSObject {
+  var wasCalled = false
+  @objc(_displayCornerRadius) dynamic func displayCornerRadius() -> Int {
+    wasCalled = true
+    return 37
+  }
+}
+
+private final class OverriddenCornerRadiusFixture: CornerRadiusFixture {
+  override func displayCornerRadius() -> CGFloat { 52 }
 }
