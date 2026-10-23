@@ -1,3 +1,5 @@
+import PHInteractiveDismissibleObjC
+import PHInteractiveDismissibleObjCTestSupport
 import ObjectiveC.runtime
 import UIKit
 import XCTest
@@ -5,6 +7,57 @@ import XCTest
 
 @MainActor
 final class PHInteractiveDismissibleTests: XCTestCase {
+  func testCornerRadiusReaderAcceptsValidCGFloatResults() {
+    let fixture = CornerRadiusFixture()
+    for radius: CGFloat in [0, 37, 62.5] {
+      fixture.radius = radius
+      XCTAssertEqual(PHInteractiveDismissiblePrivateCornerRadiusReader.displayCornerRadius(for: fixture)?.doubleValue, Double(radius))
+    }
+  }
+
+  func testCornerRadiusReaderRejectsInvalidNumbers() {
+    let fixture = CornerRadiusFixture()
+    for radius: CGFloat in [-1, .nan, .infinity, -.infinity] {
+      fixture.radius = radius
+      XCTAssertNil(PHInteractiveDismissiblePrivateCornerRadiusReader.displayCornerRadius(for: fixture))
+    }
+  }
+
+  func testCornerRadiusReaderHandlesUnavailableGetter() {
+    XCTAssertNil(PHInteractiveDismissiblePrivateCornerRadiusReader.displayCornerRadius(for: NSObject()))
+  }
+
+  func testCornerRadiusReaderCatchesObjectiveCExceptions() {
+    XCTAssertNil(PHInteractiveDismissiblePrivateCornerRadiusReader.displayCornerRadius(for: PHInteractiveDismissibleThrowingCornerRadiusFixture()))
+  }
+
+  func testCornerRadiusReaderRejectsIncompatibleReturnTypesWithoutCallingThem() {
+    let objectFixture = ObjectCornerRadiusFixture()
+    let integerFixture = IntegerCornerRadiusFixture()
+    XCTAssertNil(PHInteractiveDismissiblePrivateCornerRadiusReader.displayCornerRadius(for: objectFixture))
+    XCTAssertNil(PHInteractiveDismissiblePrivateCornerRadiusReader.displayCornerRadius(for: integerFixture))
+    XCTAssertFalse(objectFixture.wasCalled)
+    XCTAssertFalse(integerFixture.wasCalled)
+  }
+
+  func testCornerRadiusReaderRejectsIncompatibleArgumentCount() throws {
+    let name = "PHInteractiveDismissibleArgumentCountFixture_" + UUID().uuidString.replacingOccurrences(of: "-", with: "")
+    let fixtureClass: AnyClass = try XCTUnwrap(objc_allocateClassPair(NSObject.self, name, 0))
+    let getter: @convention(c) (AnyObject, Selector) -> CGFloat = { _, _ in 42 }
+    let implementation = unsafeBitCast(getter, to: IMP.self)
+    // Deliberately inconsistent metadata: the selector is a getter but its
+    // runtime signature declares an extra argument. Never invoke this IMP.
+    let returnType = MemoryLayout<CGFloat>.size == MemoryLayout<Double>.size ? "d" : "f"
+    XCTAssertTrue(class_addMethod(fixtureClass, NSSelectorFromString("_displayCornerRadius"), implementation, returnType + "@:@"))
+    objc_registerClassPair(fixtureClass)
+    let fixture = try XCTUnwrap(class_createInstance(fixtureClass, 0) as? NSObject)
+    XCTAssertNil(PHInteractiveDismissiblePrivateCornerRadiusReader.displayCornerRadius(for: fixture))
+  }
+
+  func testCornerRadiusReaderUsesSubclassGetterAndItsSignature() {
+    XCTAssertEqual(PHInteractiveDismissiblePrivateCornerRadiusReader.displayCornerRadius(for: OverriddenCornerRadiusFixture())?.doubleValue, 52)
+  }
+
   func testInteractiveTransitionManagerUsesAssociatedStorage() {
     let viewController = TestDismissibleViewController()
     let delegate = TestTransitioningDelegate()
@@ -45,6 +98,32 @@ final class PHInteractiveDismissibleTests: XCTestCase {
     XCTAssertTrue(destination.transitioningDelegate === destination.interactiveTransitionManager)
     XCTAssertTrue(destination.interactiveTransitionManager is PHModalTransitionManager)
     XCTAssertTrue(completionCalled)
+  }
+
+  func testInteractivePresentationCompletionResetsPresentedViewCornerRadius() {
+    assertInteractivePresentationResetsPresentedViewCornerRadius(completed: true)
+  }
+
+  func testInteractivePresentationCancellationResetsPresentedViewCornerRadius() {
+    assertInteractivePresentationResetsPresentedViewCornerRadius(completed: false)
+  }
+
+  func testInteractivePopRestoresPreferredCornerRadiusWhenDismissalBegins() {
+    let presented = TestDismissibleViewController()
+    presented.configuredCornerRadius = 24
+    let interactionController = InteractivePopInteractionController(viewController: presented)
+
+    // The presentation controller clears the temporary presentation radius before the
+    // controller begins accepting interactive dismissal gestures.
+    presented.view.layer.cornerRadius = 0
+    presented.view.layer.masksToBounds = false
+    XCTAssertEqual(presented.view.layer.cornerRadius, 0)
+    XCTAssertFalse(presented.view.layer.masksToBounds)
+
+    interactionController.applyPreferredCornerRadius()
+
+    XCTAssertEqual(presented.view.layer.cornerRadius, 24)
+    XCTAssertTrue(presented.view.layer.masksToBounds)
   }
 
   func testModalPresentationControllerCompletesPresenterAppearanceOnDismissalFinish() {
@@ -113,6 +192,42 @@ final class PHInteractiveDismissibleTests: XCTestCase {
     presenter.zoom(to: destination, from: sourceView, sourceRect: .zero)
 
     XCTAssertNil(destination._zoomTransitionSourceRect)
+  }
+
+  func testZoomSetupPreservesRootLayerAppearanceAcrossPresentationStyles() {
+    for style: UIModalPresentationStyle in [.custom, .overCurrentContext] {
+      for navigationHosted in [false, true] {
+        for radius: CGFloat in [0, 12] {
+          for clips in [false, true] {
+            let presenter = CapturingPresenterViewController()
+            let content = ZoomTestViewController()
+            let destination: UIViewController & InteractiveDismissible & ZoomTransitioning = navigationHosted
+              ? ZoomTestNavigationController(rootViewController: content)
+              : content
+            destination.view.layer.cornerRadius = radius
+            destination.view.layer.masksToBounds = clips
+            let source = UIView(frame: CGRect(x: 10, y: 20, width: 40, height: 50))
+
+            presenter.zoom(to: destination, from: source, with: style)
+
+            XCTAssertTrue(presenter.capturedPresentedViewController === destination)
+            XCTAssertEqual(destination.modalPresentationStyle, style)
+            XCTAssertEqual(destination.view.layer.cornerRadius, radius,
+                           "Zoom setup must not overwrite the root layer's existing radius")
+            XCTAssertEqual(destination.view.layer.masksToBounds, clips,
+                           "Zoom setup must not change the root layer's clipping")
+          }
+        }
+      }
+    }
+  }
+
+  func testZoomPresentationCompletionResetsPresentedViewCornerRadius() {
+    assertZoomPresentationResetsPresentedViewCornerRadius(completed: true)
+  }
+
+  func testZoomPresentationCancellationResetsPresentedViewCornerRadius() {
+    assertZoomPresentationResetsPresentedViewCornerRadius(completed: false)
   }
 
   func testZoomInteractionBlocksPinchWhenNavigationStackHasMultipleViewControllers() {
@@ -621,23 +736,31 @@ final class PHInteractiveDismissibleTests: XCTestCase {
   }
 
   func testInteractiveDismissGestureCancelKeepsPresentedViewController() {
-    let harness = makeInteractiveDismissHarness()
+    let harness = makeInteractiveDismissHarness(preferredCornerRadius: 24)
+
+    XCTAssertEqual(harness.destinationViewController.view.layer.cornerRadius, 24)
 
     harness.interactionController.cancel(initialSpringVelocity: 0)
 
     XCTAssertTrue(harness.transitionContext.cancelInteractiveTransitionCalled)
     XCTAssertEqual(harness.transitionContext.completedTransition, false)
     XCTAssertEqual(harness.destinationViewController.view.frame, harness.transitionContext.finalFrame)
+    XCTAssertEqual(harness.destinationViewController.view.layer.cornerRadius, 0)
+    XCTAssertFalse(harness.destinationViewController.view.layer.masksToBounds)
   }
 
   func testInteractiveDismissGestureFinishDismissesPresentedViewController() {
-    let harness = makeInteractiveDismissHarness()
+    let harness = makeInteractiveDismissHarness(preferredCornerRadius: 24)
+
+    XCTAssertEqual(harness.destinationViewController.view.layer.cornerRadius, 24)
 
     harness.interactionController.finish(initialSpringVelocity: 0)
 
     XCTAssertTrue(harness.transitionContext.finishInteractiveTransitionCalled)
     XCTAssertEqual(harness.transitionContext.completedTransition, true)
     XCTAssertEqual(harness.destinationViewController.view.frame.minX, harness.transitionContext.containerView.bounds.width)
+    XCTAssertEqual(harness.destinationViewController.view.layer.cornerRadius, 0)
+    XCTAssertFalse(harness.destinationViewController.view.layer.masksToBounds)
   }
 
   func testInteractiveDismissCompletesCancelWhenCancelAnimatorIsInterrupted() {
@@ -726,6 +849,47 @@ final class PHInteractiveDismissibleTests: XCTestCase {
                   "A cancelled dismissal with the same source should preserve the presentation-hidden source")
     XCTAssertTrue(viewController._zoomTransitionHiddenSourceView === sourceView)
   }
+
+  private func assertZoomPresentationResetsPresentedViewCornerRadius(completed: Bool,
+                                                                      file: StaticString = #filePath,
+                                                                      line: UInt = #line) {
+    let presenter = AppearanceRecordingViewController()
+    let presented = ZoomTestViewController()
+    let presentationController = PHZoomPresentationController(presentedViewController: presented,
+                                                               presenting: presenter)
+
+    presented.loadViewIfNeeded()
+    presented.view.layer.cornerRadius = 24
+    presented.view.layer.masksToBounds = true
+
+    presentationController.presentationTransitionWillBegin()
+    presentationController.presentationTransitionDidEnd(completed)
+
+    XCTAssertEqual(presented.view.layer.cornerRadius, 0, file: file, line: line)
+    XCTAssertFalse(presented.view.layer.masksToBounds, file: file, line: line)
+  }
+
+  private func assertInteractivePresentationResetsPresentedViewCornerRadius(completed: Bool,
+                                                                             file: StaticString = #filePath,
+                                                                             line: UInt = #line) {
+    let presenter = AppearanceRecordingViewController()
+    let presented = TestDismissibleViewController()
+    presented.configuredCornerRadius = 24
+
+    let interactionController = InteractivePopInteractionController(viewController: presented)
+    let presentationController = PHModalPresentationController(presentedViewController: presented,
+                                                               presenting: presenter)
+
+    XCTAssertEqual(presented.view.layer.cornerRadius, 24, file: file, line: line)
+    XCTAssertTrue(presented.view.layer.masksToBounds, file: file, line: line)
+
+    presentationController.presentationTransitionWillBegin()
+    presentationController.presentationTransitionDidEnd(completed)
+
+    XCTAssertEqual(presented.view.layer.cornerRadius, 0, file: file, line: line)
+    XCTAssertFalse(presented.view.layer.masksToBounds, file: file, line: line)
+    withExtendedLifetime(interactionController) {}
+  }
 }
 
 @MainActor
@@ -762,6 +926,8 @@ private final class ZoomTestViewController: UIViewController, InteractiveDismiss
   var configuredScrollView: UIScrollView?
   var configuredExclusiveViews: [UIView] = []
   var configuredSourceView: UIView?
+
+  var preferredCornerRadius: CGFloat? { 24 }
 
   var dismissibleScrollView: UIScrollView? {
     configuredScrollView
@@ -809,12 +975,14 @@ private extension PHInteractiveDismissibleTests {
   }
 
   func makeInteractiveDismissHarness(isAnimated: Bool = false,
+                                     preferredCornerRadius: CGFloat? = nil,
                                      file: StaticString = #filePath,
                                      line: UInt = #line) -> InteractiveDismissHarness {
     let containerFrame = CGRect(x: 0, y: 0, width: 320, height: 640)
     let containerView = UIView(frame: containerFrame)
     let presenterViewController = UIViewController()
     let destinationViewController = TestDismissibleViewController()
+    destinationViewController.configuredCornerRadius = preferredCornerRadius
     let finalFrame = CGRect(origin: .zero, size: containerFrame.size)
     let interactionController = InteractivePopInteractionController(viewController: destinationViewController)
     let transitionContext = TestTransitionContext(containerView: containerView,
@@ -1011,4 +1179,29 @@ private final class StubPinchGestureRecognizer: UIPinchGestureRecognizer {
   override var numberOfTouches: Int {
     stubNumberOfTouches
   }
+}
+
+private class CornerRadiusFixture: NSObject {
+  var radius: CGFloat = 37
+  @objc(_displayCornerRadius) dynamic func displayCornerRadius() -> CGFloat { radius }
+}
+
+private final class ObjectCornerRadiusFixture: NSObject {
+  var wasCalled = false
+  @objc(_displayCornerRadius) dynamic func displayCornerRadius() -> NSNumber {
+    wasCalled = true
+    return 37
+  }
+}
+
+private final class IntegerCornerRadiusFixture: NSObject {
+  var wasCalled = false
+  @objc(_displayCornerRadius) dynamic func displayCornerRadius() -> Int {
+    wasCalled = true
+    return 37
+  }
+}
+
+private final class OverriddenCornerRadiusFixture: CornerRadiusFixture {
+  override func displayCornerRadius() -> CGFloat { 52 }
 }

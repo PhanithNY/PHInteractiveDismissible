@@ -60,6 +60,16 @@ final class RootViewController: UIViewController {
     navigationController?.setNavigationBarHidden(true, animated: animated)
   }
 
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    setProMotionRefreshRate(.fps120)
+  }
+
+  override func viewWillDisappear(_ animated: Bool) {
+    super.viewWillDisappear(animated)
+    setProMotionRefreshRate(.automatic)
+  }
+
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
     applyLayoutMetricsForCurrentSize()
