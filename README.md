@@ -129,6 +129,52 @@ Core Animation frame-rate range in the host app's `Info.plist`:
 
 This is a host-application setting and cannot be injected by a Swift package.
 
+### Optional Scene Refresh Vote
+
+Each window scene shares one refresh-vote display link. The default is `.automatic`,
+which leaves the vote paused and lets iOS manage refresh without an additional request.
+Selected controllers can update their scene's preference manually:
+
+```swift
+import PHInteractiveDismissible
+
+final class ScrollingViewController: UIViewController {
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    setProMotionRefreshRate(.fps120)
+  }
+
+  override func viewWillDisappear(_ animated: Bool) {
+    super.viewWillDisappear(animated)
+    setProMotionRefreshRate(.automatic)
+  }
+}
+```
+
+`PHProMotionRefreshRate` provides `.automatic`, `.fps30`, `.fps60`, `.fps90`, and `.fps120`.
+You can also assign `windowScene.proMotionRefreshRate` directly. The controller helper
+returns `false` if its view is not attached to a scene and does not load the view.
+
+The link is created on the first manual request and reused for every subsequent rate
+change, including transitions through automatic mode. Each assignment replaces the
+scene's current preference. There are no per-controller registrations or automatic
+visibility decisions: the app must restore the desired preference on navigation,
+presentation, and cancelled transitions.
+
+Scene inactivity or backgrounding pauses the existing link. Activation restores the
+latest selected preference; `.automatic` remains paused. Different scenes keep separate
+links and preferences. The scene owns its vote, which holds the scene weakly and does
+not retain controllers. Scene teardown removes the observers and invalidates the link.
+
+The extension builds with Xcode 26 and later and supports iOS 13 and later.
+The link is bound to the scene's screen using the screen display-link API.
+iOS 15+ uses `preferredFrameRateRange`; iOS
+13–14 uses `preferredFramesPerSecond`. Requests are clamped to the display's maximum;
+the actual rate remains system-controlled and may differ (including a 90 FPS request).
+A request does not cap all UIKit animations in the scene. Higher rates can increase
+power use. The host app still needs the Info.plist opt-in
+above to request rates above 60 Hz on supported iPhones.
+
 ## Installation
 From Xcode menu bar:
 1.  File

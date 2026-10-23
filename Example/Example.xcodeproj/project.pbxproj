@@ -10,14 +10,26 @@
 		A1B2C3D40123456789ABCDE1 /* ../Tests/PHInteractiveDismissibleTests/PHInteractiveDismissibleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D30123456789ABCDE1 /* ../Tests/PHInteractiveDismissibleTests/PHInteractiveDismissibleTests.swift */; };
 		A1B2C3D60123456789ABCDE1 /* PHInteractiveDismissible in Frameworks */ = {isa = PBXBuildFile; productRef = F8FE73472EE6D8FD002FA683 /* PHInteractiveDismissible */; };
 		A1B2C3F10123456789ABCDE1 /* ../Tests/PHInteractiveDismissibleObjCTestSupport/PHInteractiveDismissibleThrowingCornerRadiusFixture.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3F20123456789ABCDE1 /* ../Tests/PHInteractiveDismissibleObjCTestSupport/PHInteractiveDismissibleThrowingCornerRadiusFixture.m */; };
+		A1B2C3FA0123456789ABCDE1 /* ../Tests/PHInteractiveDismissibleTests/ProMotionRefreshVoteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3FB0123456789ABCDE1 /* ../Tests/PHInteractiveDismissibleTests/ProMotionRefreshVoteTests.swift */; };
 		F8FE73482EE6D8FD002FA683 /* PHInteractiveDismissible in Frameworks */ = {isa = PBXBuildFile; productRef = F8FE73472EE6D8FD002FA683 /* PHInteractiveDismissible */; };
 		F8FE736D2EE6DA02002FA683 /* EasyAnchor in Frameworks */ = {isa = PBXBuildFile; productRef = F8FE736C2EE6DA02002FA683 /* EasyAnchor */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A1B2C3FC0123456789ABCDE1 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F8FE6F502EE6D2A6002FA683 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F8FE6F572EE6D2A6002FA683;
+			remoteInfo = Example;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		A1B2C3D20123456789ABCDE1 /* ExampleTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ExampleTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1B2C3D30123456789ABCDE1 /* ../Tests/PHInteractiveDismissibleTests/PHInteractiveDismissibleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Tests/PHInteractiveDismissibleTests/PHInteractiveDismissibleTests.swift; sourceTree = SOURCE_ROOT; };
 		A1B2C3F20123456789ABCDE1 /* ../Tests/PHInteractiveDismissibleObjCTestSupport/PHInteractiveDismissibleThrowingCornerRadiusFixture.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ../Tests/PHInteractiveDismissibleObjCTestSupport/PHInteractiveDismissibleThrowingCornerRadiusFixture.m; sourceTree = SOURCE_ROOT; };
+		A1B2C3FB0123456789ABCDE1 /* ../Tests/PHInteractiveDismissibleTests/ProMotionRefreshVoteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Tests/PHInteractiveDismissibleTests/ProMotionRefreshVoteTests.swift; sourceTree = SOURCE_ROOT; };
 		F8FE6F582EE6D2A6002FA683 /* Example.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Example.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -66,6 +78,7 @@
 		A1B2C3D50123456789ABCDE1 /* ExampleTests */ = {
 			isa = PBXGroup;
 			children = (
+				A1B2C3FB0123456789ABCDE1 /* ../Tests/PHInteractiveDismissibleTests/ProMotionRefreshVoteTests.swift */,
 				A1B2C3D30123456789ABCDE1 /* ../Tests/PHInteractiveDismissibleTests/PHInteractiveDismissibleTests.swift */,
 				A1B2C3F20123456789ABCDE1 /* ../Tests/PHInteractiveDismissibleObjCTestSupport/PHInteractiveDismissibleThrowingCornerRadiusFixture.m */,
 			);
@@ -104,6 +117,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				A1B2C3FD0123456789ABCDE1 /* PBXTargetDependency */,
 			);
 			name = ExampleTests;
 			packageProductDependencies = (
@@ -202,6 +216,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1B2C3FA0123456789ABCDE1 /* ../Tests/PHInteractiveDismissibleTests/ProMotionRefreshVoteTests.swift in Sources */,
 				A1B2C3D40123456789ABCDE1 /* ../Tests/PHInteractiveDismissibleTests/PHInteractiveDismissibleTests.swift in Sources */,
 				A1B2C3F10123456789ABCDE1 /* ../Tests/PHInteractiveDismissibleObjCTestSupport/PHInteractiveDismissibleThrowingCornerRadiusFixture.m in Sources */,
 			);
@@ -216,11 +231,19 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		A1B2C3FD0123456789ABCDE1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F8FE6F572EE6D2A6002FA683 /* Example */;
+			targetProxy = A1B2C3FC0123456789ABCDE1 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
 		A1B2C3DE0123456789ABCDE1 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "";
+				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = V78HZDL44Y;
@@ -240,6 +263,7 @@
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Example.app/Example";
 				TEST_TARGET_NAME = Example;
 			};
 			name = Debug;
@@ -247,7 +271,7 @@
 		A1B2C3DF0123456789ABCDE1 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "";
+				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = V78HZDL44Y;
@@ -265,6 +289,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Example.app/Example";
 				TEST_TARGET_NAME = Example;
 			};
 			name = Release;
